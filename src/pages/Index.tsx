@@ -44,8 +44,6 @@ const formatSec = (s: number) => {
   return `${m}:${sec}`;
 };
 
-const artFallback = "/placeholder.svg";
-
 const trackRow = (track: ApiTrack, dimmed = false) => (
   <div
     key={track.id}
