@@ -349,7 +349,34 @@ const Index = () => {
             </div>
           </section>
 
-          <section className="grid gap-4 px-4 pb-4 lg:grid-cols-4">
+          <section className="grid gap-4 px-4 pb-4 lg:grid-cols-5">
+            <article className="rounded-[12px] border border-primary/35 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl neon-edge">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-primary">Now Playing</h3>
+                <Badge className="bg-accent text-accent-foreground">Live</Badge>
+              </div>
+
+              <div className="flex items-center gap-3 rounded-md border border-border/70 bg-panel/70 p-3">
+                {player.data?.art ? (
+                  <img
+                    src={player.data.art}
+                    alt={`${player.data?.title ?? "Current song"} thumbnail`}
+                    loading="lazy"
+                    className="h-14 w-14 rounded-md border border-border/70 object-cover"
+                  />
+                ) : (
+                  <div className="flex h-14 w-14 items-center justify-center rounded-md border border-border/70 bg-panel-soft">
+                    <Disc3 className="h-5 w-5 text-primary" />
+                  </div>
+                )}
+
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground">{player.data?.title ?? "No track playing"}</p>
+                  <p className="truncate text-xs text-muted-foreground">{player.data?.artist ?? "Waiting for backend data"}</p>
+                </div>
+              </div>
+            </article>
+
             <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft">
               <h3 className="mb-2 text-sm font-semibold">Audio Cache Status</h3>
               <p className="mb-2 text-xs text-muted-foreground">Cache Size: {cache.data?.sizeMb ?? 142} MB</p>
