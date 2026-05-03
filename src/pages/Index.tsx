@@ -98,12 +98,12 @@ const Index = () => {
   const [savePresetOpen, setSavePresetOpen] = useState(false);
   const [presetName, setPresetName] = useState("");
 
-  const queue = useQuery({ queryKey: ["queue"], queryFn: async () => voxariaApi.getQueue().catch(() => mockData.queue), refetchInterval: 10000 });
+  const queue = useQuery({ queryKey: ["queue"], queryFn: voxariaApi.getQueue, refetchInterval: 10000 });
   const history = useQuery({ queryKey: ["history"], queryFn: async () => voxariaApi.getHistory().catch(() => mockData.history), refetchInterval: 14000 });
   const status = useQuery({ queryKey: ["status"], queryFn: async () => voxariaApi.getStatus().catch(() => mockData.status), refetchInterval: 10000 });
   const cache = useQuery({ queryKey: ["cache"], queryFn: async () => voxariaApi.getCache().catch(() => mockData.cache), refetchInterval: 15000 });
   const settings = useQuery({ queryKey: ["settings"], queryFn: async () => voxariaApi.getSettings().catch(() => mockData.settings) });
-  const player = useQuery({ queryKey: ["player"], queryFn: async () => voxariaApi.getPlayer().catch(() => mockData.player), refetchInterval: 5000 });
+  const player = useQuery({ queryKey: ["player"], queryFn: voxariaApi.getPlayer, refetchInterval: 5000 });
 
   const refreshAll = () => {
     void queryClient.invalidateQueries({ queryKey: ["queue"] });
