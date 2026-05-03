@@ -194,7 +194,7 @@ const Index = () => {
       setLyricsData(null);
       setLyricsUnavailable(true);
       setActiveLine(0);
-      toast({ title: "Lyrics not available", description: "No lyrics returned for this track." });
+      toast({ title: "Service Unavailable", description: "Lyrics service is currently unreachable." });
     },
   });
 
