@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Badge,
   Disc3,
   History,
   ListMusic,
@@ -19,6 +18,7 @@ import {
   Youtube,
   LogOut,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -148,8 +148,8 @@ const Index = () => {
   const loading = queue.isLoading || history.isLoading || status.isLoading || cache.isLoading || settings.isLoading || player.isLoading;
 
   return (
-    <div className="min-h-screen overflow-x-auto bg-background text-foreground">
-      <div className="grid min-h-screen min-w-[1240px] grid-cols-[260px_1fr]">
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="relative min-h-screen">
         <aside className="fixed left-0 top-0 z-20 flex h-screen w-[260px] flex-col border-r border-border/70 bg-panel/90 p-4 backdrop-blur-xl">
           <div className="mb-8 rounded-md border border-primary/35 bg-panel-soft/85 p-3 shadow-soft">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Discord Music Bot</p>
@@ -177,7 +177,7 @@ const Index = () => {
           </div>
         </aside>
 
-        <main className="ml-[260px] flex min-h-screen flex-col pb-36">
+        <main className="ml-[260px] flex min-h-screen min-w-[1080px] w-[calc(100vw-260px)] flex-col pb-36">
           <header className="sticky top-0 z-10 border-b border-border/70 bg-background/85 p-4 backdrop-blur-xl">
             <div className="flex items-center gap-3 rounded-md border border-border/70 bg-panel-soft/70 p-2 shadow-soft">
               <Search className="ml-1 h-4 w-4 text-muted-foreground" />
@@ -202,8 +202,9 @@ const Index = () => {
             </div>
           </header>
 
-          <section className="grid grid-cols-12 gap-4 p-4">
-            <article className="col-span-6 rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
+          <section className="space-y-4 p-4">
+            <div className="grid grid-cols-2 gap-4">
+            <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="flex items-center gap-2 text-lg font-semibold">
                   <ListMusic className="h-5 w-5 text-primary" /> Up Next
@@ -215,7 +216,7 @@ const Index = () => {
               </div>
             </article>
 
-            <article className="col-span-6 rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
+            <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="flex items-center gap-2 text-lg font-semibold">
                   <History className="h-5 w-5 text-primary" /> Session History
@@ -227,7 +228,10 @@ const Index = () => {
               </div>
             </article>
 
-            <article className="col-span-4 rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+            <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
               <h3 className="mb-3 text-base font-semibold">Server & Shard Status</h3>
               <div className="space-y-2 text-sm">
                 <p>
@@ -249,7 +253,7 @@ const Index = () => {
               </div>
             </article>
 
-            <article className="col-span-4 rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
+            <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
               <h3 className="mb-3 text-base font-semibold">Audio Cache Status</h3>
               <p className="mb-2 text-sm text-muted-foreground">Cache Size: {cache.data?.sizeMb ?? 142} MB</p>
               <Progress value={cacheProgress} className="h-2" />
@@ -264,7 +268,7 @@ const Index = () => {
               </Button>
             </article>
 
-            <article className="col-span-4 rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
+            <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
               <h3 className="mb-3 text-base font-semibold">System Settings</h3>
               <div className="flex items-center justify-between rounded-md border border-border/70 bg-panel p-3">
                 <div>
@@ -278,6 +282,7 @@ const Index = () => {
                 />
               </div>
             </article>
+            </div>
           </section>
         </main>
       </div>
