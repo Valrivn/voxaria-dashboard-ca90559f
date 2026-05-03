@@ -82,8 +82,9 @@ const Index = () => {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [requestTerm, setRequestTerm] = useState("");
-  const [lyricsData, setLyricsData] = useState<ApiLyrics>(mockData.lyrics);
+  const [lyricsData, setLyricsData] = useState<ApiLyrics | null>(null);
   const [activeLine, setActiveLine] = useState(0);
+  const [lyricsUnavailable, setLyricsUnavailable] = useState(false);
   const [uiVolume, setUiVolume] = useState(mockData.player.volume);
   const [savedPlaylists, setSavedPlaylists] = useState<SessionPreset[]>([
     { id: "sp-1", name: "Late Night Coding", tracks: 24 },
@@ -163,26 +164,56 @@ const Index = () => {
   const volumeMutation = useMutation({ mutationFn: voxariaApi.setVolume, onSuccess: refreshAll });
 
   const lyricsMutation = useMutation({
-    mutationFn: async () => voxariaApi.getLyrics(player.data?.title ?? "", player.data?.artist ?? ""),
+    mutationFn: async ({ title, artist }: { title: string; artist: string }) => voxariaApi.getLyrics(title, artist),
     onSuccess: (data) => {
+      if (!data.lines?.length) {
+        setLyricsData(null);
+        setLyricsUnavailable(true);
+        setActiveLine(0);
+        return;
+      }
+
+      setLyricsUnavailable(false);
       setLyricsData(data);
       setActiveLine(0);
       toast({ title: "Lyrics synced", description: "Live lyrics loaded." });
     },
     onError: () => {
-      setLyricsData(mockData.lyrics);
+      setLyricsData(null);
+      setLyricsUnavailable(true);
       setActiveLine(0);
-      toast({ title: "Lyrics fallback", description: "Using temporary adapter source." });
+      toast({ title: "Lyrics not available", description: "No lyrics returned for this track." });
     },
   });
 
+  const currentTrack = useMemo(
+    () => ({
+      title: (player.data?.title ?? "").trim(),
+      artist: (player.data?.artist ?? "").trim(),
+    }),
+    [player.data?.title, player.data?.artist],
+  );
+
+  const currentTrackKey = `${currentTrack.title}::${currentTrack.artist}`;
+
   useEffect(() => {
-    if (!player.data?.playing || !lyricsData.lines.length) return;
+    if (!currentTrack.title && !currentTrack.artist) {
+      setLyricsData(null);
+      setLyricsUnavailable(true);
+      setActiveLine(0);
+      return;
+    }
+
+    lyricsMutation.mutate({ title: currentTrack.title, artist: currentTrack.artist });
+  }, [currentTrackKey]);
+
+  useEffect(() => {
+    if (!player.data?.playing || !lyricsData?.lines.length) return;
     const interval = setInterval(() => {
       setActiveLine((prev) => (prev + 1) % lyricsData.lines.length);
     }, 3800);
     return () => clearInterval(interval);
-  }, [player.data?.playing, lyricsData.lines]);
+  }, [player.data?.playing, lyricsData?.lines]);
 
   useEffect(() => {
     if (typeof player.data?.volume === "number") {
@@ -280,22 +311,28 @@ const Index = () => {
                   <div>
                     <h2 className="text-xl font-bold text-primary">Expanded Visualizer</h2>
                     <p className="text-sm text-muted-foreground">
-                      {player.data?.title ?? "Night Circuit"} — {player.data?.artist ?? "Mira Kade"}
+                       {player.data?.title ?? "No track playing"} — {player.data?.artist ?? "Unknown artist"}
                     </p>
                   </div>
 
-                  <Button variant="outline" className="border-primary/55 text-primary hover:bg-accent/40" onClick={() => lyricsMutation.mutate()}>
+                  <Button
+                    variant="outline"
+                    className="border-primary/55 text-primary hover:bg-accent/40"
+                    onClick={() => lyricsMutation.mutate({ title: currentTrack.title, artist: currentTrack.artist })}
+                    disabled={lyricsMutation.isPending || (!currentTrack.title && !currentTrack.artist)}
+                  >
                     Refresh Lyrics
                   </Button>
                 </div>
 
                 <div className="mb-3 rounded-md border border-primary/45 bg-accent/25 px-3 py-2 text-sm text-primary neon-glow">
-                  Source: {lyricsData.source || "Temporary adapter"}
+                  {lyricsUnavailable ? "Lyrics not available" : `Source: ${lyricsData?.source || "Unknown"}`}
                 </div>
 
                 <div className="h-full overflow-y-auto pr-2">
                   <div className="space-y-2">
-                    {lyricsData.lines.map((line, idx) => (
+                    {lyricsData?.lines?.length ? (
+                      lyricsData.lines.map((line, idx) => (
                       <button
                         key={`${line}-${idx}`}
                         onClick={() => setActiveLine(idx)}
@@ -307,7 +344,10 @@ const Index = () => {
                       >
                         {line}
                       </button>
-                    ))}
+                      ))
+                    ) : (
+                      <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">Lyrics not available</p>
+                    )}
                   </div>
                 </div>
               </article>
