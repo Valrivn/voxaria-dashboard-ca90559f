@@ -8,6 +8,7 @@ import {
   LogOut,
   Pause,
   Play,
+  Plus,
   Search,
   Server,
   Settings2,
@@ -30,6 +31,7 @@ import { toast } from "@/hooks/use-toast";
 import { mockData, voxariaApi, type ApiLyrics, type ApiTrack } from "@/lib/voxaria-api";
 
 type NavItem = { label: string; icon: typeof Disc3 };
+type SessionPreset = { id: string; name: string; tracks: number };
 
 const navItems: NavItem[] = [
   { label: "Visualizer", icon: Disc3 },
@@ -82,6 +84,12 @@ const Index = () => {
   const [requestTerm, setRequestTerm] = useState("");
   const [lyricsData, setLyricsData] = useState<ApiLyrics>(mockData.lyrics);
   const [activeLine, setActiveLine] = useState(0);
+  const [uiVolume, setUiVolume] = useState(mockData.player.volume);
+  const [savedPlaylists, setSavedPlaylists] = useState<SessionPreset[]>([
+    { id: "sp-1", name: "Late Night Coding", tracks: 24 },
+    { id: "sp-2", name: "Workout Mix", tracks: 31 },
+    { id: "sp-3", name: "Focus Session", tracks: 18 },
+  ]);
 
   const queue = useQuery({ queryKey: ["queue"], queryFn: async () => voxariaApi.getQueue().catch(() => mockData.queue), refetchInterval: 10000 });
   const history = useQuery({ queryKey: ["history"], queryFn: async () => voxariaApi.getHistory().catch(() => mockData.history), refetchInterval: 14000 });
@@ -176,6 +184,12 @@ const Index = () => {
     return () => clearInterval(interval);
   }, [player.data?.playing, lyricsData.lines]);
 
+  useEffect(() => {
+    if (typeof player.data?.volume === "number") {
+      setUiVolume(Math.min(200, Math.max(0, player.data.volume)));
+    }
+  }, [player.data?.volume]);
+
   const cacheProgress = useMemo(() => {
     if (!cache.data) return 0;
     return Math.min(100, Math.round((cache.data.sizeMb / cache.data.maxMb) * 100));
@@ -186,7 +200,22 @@ const Index = () => {
     return Math.min(100, Math.round((player.data.positionSec / player.data.durationSec) * 100));
   }, [player.data]);
 
+  const displayVolume = useMemo(() => Math.min(200, Math.max(0, Math.round(uiVolume))), [uiVolume]);
+  const boostActive = displayVolume > 100;
+
   const loading = queue.isLoading || status.isLoading || cache.isLoading || settings.isLoading || player.isLoading;
+
+  const saveCurrentQueueAsPreset = () => {
+    const now = new Date();
+    const label = `Session ${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+    const tracks = (queue.data ?? []).length;
+    setSavedPlaylists((prev) => [{ id: crypto.randomUUID(), name: label, tracks }, ...prev].slice(0, 6));
+    toast({ title: "Preset saved", description: `Saved ${tracks} tracks to ${label}.` });
+  };
+
+  const loadPreset = (preset: SessionPreset) => {
+    toast({ title: "Preset loaded", description: `${preset.name} queued (${preset.tracks} tracks).` });
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -320,7 +349,7 @@ const Index = () => {
             </div>
           </section>
 
-          <section className="grid gap-4 px-4 pb-4 md:grid-cols-3">
+          <section className="grid gap-4 px-4 pb-4 lg:grid-cols-4">
             <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft">
               <h3 className="mb-2 text-sm font-semibold">Audio Cache Status</h3>
               <p className="mb-2 text-xs text-muted-foreground">Cache Size: {cache.data?.sizeMb ?? 142} MB</p>
@@ -354,6 +383,29 @@ const Index = () => {
               <h3 className="mb-2 text-sm font-semibold">Recent History</h3>
               <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 132 }}>
                 {(history.data ?? []).slice(0, 3).map((track) => queueRow(track))}
+              </div>
+            </article>
+
+            <article className="rounded-xl border border-primary/35 bg-panel-soft/70 p-4 shadow-soft neon-edge">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-primary">Saved Playlists</h3>
+                <Button size="sm" variant="outline" className="h-8 border-primary/55 text-primary hover:bg-accent/35" onClick={saveCurrentQueueAsPreset}>
+                  <Plus className="mr-1 h-3.5 w-3.5" /> Save Current Queue as Preset
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                {savedPlaylists.map((preset) => (
+                  <div key={preset.id} className="flex items-center justify-between rounded-md border border-border/70 bg-panel/80 p-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-semibold text-foreground">{preset.name}</p>
+                      <p className="text-[11px] text-muted-foreground">{preset.tracks} tracks</p>
+                    </div>
+                    <Button size="sm" variant="outline" className="h-7 border-primary/55 text-primary hover:bg-accent/35" onClick={() => loadPreset(preset)}>
+                      Load
+                    </Button>
+                  </div>
+                ))}
               </div>
             </article>
           </section>
@@ -401,7 +453,17 @@ const Index = () => {
           <div className="flex items-center justify-end gap-3">
             <div className="flex w-44 items-center gap-2">
               <Volume2 className="h-4 w-4 text-primary" />
-              <Slider value={[player.data?.volume ?? 68]} max={100} step={1} onValueCommit={([v]) => volumeMutation.mutate(v)} className="neon-glow rounded-full" />
+              <Slider
+                value={[displayVolume]}
+                max={200}
+                step={1}
+                onValueChange={([v]) => setUiVolume(v)}
+                onValueCommit={([v]) => volumeMutation.mutate(v)}
+                className="neon-glow rounded-full"
+              />
+              <span className={`w-12 text-right text-sm font-semibold text-primary ${boostActive ? "animate-pulse neon-text-boost" : "neon-text"}`}>
+                {displayVolume}%
+              </span>
             </div>
             <Separator orientation="vertical" className="hidden h-7 md:block" />
             <Button variant="outline" className="border-primary/55 text-primary hover:bg-accent/35" onClick={() => clearQueueMutation.mutate()}>
