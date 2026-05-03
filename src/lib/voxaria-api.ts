@@ -43,8 +43,7 @@ export type ApiLyrics = {
 
 type PlaybackAction = "previous" | "play_pause" | "next" | "stop";
 
-const BASE_URL = import.meta.env.VITE_VOXARIA_API_BASE_URL;
-
+const BASE_URL = "https://unhitched-shrink-dorsal.ngrok-free.dev";
 const ENDPOINTS = {
   queue: "/music/queue",
   history: "/music/history",
@@ -89,7 +88,8 @@ export const voxariaApi = {
   getCache: () => request<ApiCache>(ENDPOINTS.cache),
   getSettings: () => request<ApiSettings>(ENDPOINTS.settings),
   getPlayer: () => request<ApiPlayer>(ENDPOINTS.player),
-  search: (query: string) => request<{ ok: boolean; queued?: number }>(ENDPOINTS.search, { method: "POST", body: JSON.stringify({ query }) }),
+  search: (query: string) =>
+    request<{ ok: boolean; queued?: number }>(ENDPOINTS.search, { method: "POST", body: JSON.stringify({ query }) }),
   playback: (action: PlaybackAction) =>
     request<{ ok: boolean }>(ENDPOINTS.playback, { method: "POST", body: JSON.stringify({ action }) }),
   clearQueue: () => request<{ ok: boolean }>(ENDPOINTS.clearQueue, { method: "POST" }),
@@ -114,14 +114,62 @@ export const voxariaApi = {
 
 export const mockData = {
   queue: [
-    { id: "q1", title: "Night Circuit", artist: "Mira Kade", duration: "3:48", requestedBy: "Rex", art: "", requesterAvatar: "" },
-    { id: "q2", title: "Static Bloom", artist: "Luma Echo", duration: "4:12", requestedBy: "Nyx", art: "", requesterAvatar: "" },
-    { id: "q3", title: "Volt Heart", artist: "Astra Vale", duration: "2:59", requestedBy: "Kai", art: "", requesterAvatar: "" },
+    {
+      id: "q1",
+      title: "Night Circuit",
+      artist: "Mira Kade",
+      duration: "3:48",
+      requestedBy: "Rex",
+      art: "",
+      requesterAvatar: "",
+    },
+    {
+      id: "q2",
+      title: "Static Bloom",
+      artist: "Luma Echo",
+      duration: "4:12",
+      requestedBy: "Nyx",
+      art: "",
+      requesterAvatar: "",
+    },
+    {
+      id: "q3",
+      title: "Volt Heart",
+      artist: "Astra Vale",
+      duration: "2:59",
+      requestedBy: "Kai",
+      art: "",
+      requesterAvatar: "",
+    },
   ] as ApiTrack[],
   history: [
-    { id: "h1", title: "Afterimage", artist: "Zero Harbor", duration: "3:22", requestedBy: "Hex", art: "", requesterAvatar: "" },
-    { id: "h2", title: "Deep Current", artist: "Auraline", duration: "5:01", requestedBy: "Dax", art: "", requesterAvatar: "" },
-    { id: "h3", title: "Orbit Sleep", artist: "Nori", duration: "4:06", requestedBy: "Ivy", art: "", requesterAvatar: "" },
+    {
+      id: "h1",
+      title: "Afterimage",
+      artist: "Zero Harbor",
+      duration: "3:22",
+      requestedBy: "Hex",
+      art: "",
+      requesterAvatar: "",
+    },
+    {
+      id: "h2",
+      title: "Deep Current",
+      artist: "Auraline",
+      duration: "5:01",
+      requestedBy: "Dax",
+      art: "",
+      requesterAvatar: "",
+    },
+    {
+      id: "h3",
+      title: "Orbit Sleep",
+      artist: "Nori",
+      duration: "4:06",
+      requestedBy: "Ivy",
+      art: "",
+      requesterAvatar: "",
+    },
   ] as ApiTrack[],
   status: { activeShard: 0, pingMs: 42, uptime: "24h 12m", online: true } as ApiStatus,
   cache: { sizeMb: 142, maxMb: 300 } as ApiCache,
