@@ -83,6 +83,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+const cleanLyricsTitle = (title: string) =>
+  title
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/official\s*video/gi, " ")
+    .replace(/lyrics?/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
 export const voxariaApi = {
   getQueue: () => request<ApiTrack[]>(ENDPOINTS.queue),
   getHistory: () => request<ApiTrack[]>(ENDPOINTS.history),
@@ -111,7 +120,7 @@ export const voxariaApi = {
   getLyrics: (title: string, artist: string) =>
     request<ApiLyrics>(ENDPOINTS.lyrics, {
       method: "POST",
-      body: JSON.stringify({ title, artist }),
+      body: JSON.stringify({ title: cleanLyricsTitle(title), artist }),
     }),
 };
 

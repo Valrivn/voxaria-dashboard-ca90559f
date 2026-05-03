@@ -93,17 +93,17 @@ const Index = () => {
   const [lyricsData, setLyricsData] = useState<ApiLyrics | null>(null);
   const [activeLine, setActiveLine] = useState(0);
   const [lyricsUnavailable, setLyricsUnavailable] = useState(false);
-  const [uiVolume, setUiVolume] = useState(mockData.player.volume);
+  const [uiVolume, setUiVolume] = useState(100);
   const [savedPlaylists, setSavedPlaylists] = useState<SessionPreset[]>([]);
   const [savePresetOpen, setSavePresetOpen] = useState(false);
   const [presetName, setPresetName] = useState("");
 
-  const queue = useQuery({ queryKey: ["queue"], queryFn: async () => voxariaApi.getQueue().catch(() => mockData.queue), refetchInterval: 10000 });
+  const queue = useQuery({ queryKey: ["queue"], queryFn: voxariaApi.getQueue, refetchInterval: 10000 });
   const history = useQuery({ queryKey: ["history"], queryFn: async () => voxariaApi.getHistory().catch(() => mockData.history), refetchInterval: 14000 });
   const status = useQuery({ queryKey: ["status"], queryFn: async () => voxariaApi.getStatus().catch(() => mockData.status), refetchInterval: 10000 });
   const cache = useQuery({ queryKey: ["cache"], queryFn: async () => voxariaApi.getCache().catch(() => mockData.cache), refetchInterval: 15000 });
   const settings = useQuery({ queryKey: ["settings"], queryFn: async () => voxariaApi.getSettings().catch(() => mockData.settings) });
-  const player = useQuery({ queryKey: ["player"], queryFn: async () => voxariaApi.getPlayer().catch(() => mockData.player), refetchInterval: 5000 });
+  const player = useQuery({ queryKey: ["player"], queryFn: voxariaApi.getPlayer, refetchInterval: 5000 });
 
   const refreshAll = () => {
     void queryClient.invalidateQueries({ queryKey: ["queue"] });
@@ -194,7 +194,7 @@ const Index = () => {
       setLyricsData(null);
       setLyricsUnavailable(true);
       setActiveLine(0);
-      toast({ title: "Lyrics not available", description: "No lyrics returned for this track." });
+      toast({ title: "Service Unavailable", description: "Lyrics service is currently unreachable." });
     },
   });
 
@@ -247,6 +247,9 @@ const Index = () => {
   const boostActive = displayVolume > 100;
 
   const loading = queue.isLoading || status.isLoading || cache.isLoading || settings.isLoading || player.isLoading;
+  const playerUnavailable = player.isError;
+  const queueUnavailable = queue.isError;
+  const lyricsServiceUnavailable = lyricsMutation.isError;
 
   const saveCurrentQueueAsPreset = (name: string) => {
     const label = name.trim();
@@ -336,7 +339,9 @@ const Index = () => {
                   <div>
                     <h2 className="text-xl font-bold text-primary">Expanded Visualizer</h2>
                     <p className="text-sm text-muted-foreground">
-                       {player.data?.title ?? "No track playing"} — {player.data?.artist ?? "Unknown artist"}
+                      {playerUnavailable
+                        ? "Service Unavailable"
+                        : `${player.data?.title ?? "No track playing"} — ${player.data?.artist ?? "Unknown artist"}`}
                     </p>
                   </div>
 
@@ -351,7 +356,11 @@ const Index = () => {
                 </div>
 
                 <div className="mb-3 rounded-md border border-primary/45 bg-accent/25 px-3 py-2 text-sm text-primary neon-glow">
-                  {lyricsUnavailable ? "Lyrics not available" : `Source: ${lyricsData?.source || "Unknown"}`}
+                  {lyricsServiceUnavailable
+                    ? "Service Unavailable"
+                    : lyricsUnavailable
+                      ? "Lyrics not available"
+                      : `Source: ${lyricsData?.source || "Unknown"}`}
                 </div>
 
                 <div className="h-full overflow-y-auto pr-2">
@@ -371,7 +380,9 @@ const Index = () => {
                       </button>
                       ))
                     ) : (
-                      <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">Lyrics not available</p>
+                      <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
+                        {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -407,7 +418,11 @@ const Index = () => {
                   </div>
 
                   <div className="space-y-2 overflow-y-auto pr-1">
-                    {(queue.data ?? []).map((track) => queueRow(track))}
+                    {queueUnavailable ? (
+                      <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">Service Unavailable</p>
+                    ) : (
+                      (queue.data ?? []).map((track) => queueRow(track))
+                    )}
                   </div>
                 </section>
               </aside>
@@ -436,8 +451,8 @@ const Index = () => {
                 )}
 
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-foreground">{player.data?.title ?? "No track playing"}</p>
-                  <p className="truncate text-xs text-muted-foreground">{player.data?.artist ?? "Waiting for backend data"}</p>
+                  <p className="truncate text-sm font-semibold text-foreground">{playerUnavailable ? "Service Unavailable" : player.data?.title ?? "No track playing"}</p>
+                  <p className="truncate text-xs text-muted-foreground">{playerUnavailable ? "Service Unavailable" : player.data?.artist ?? "Waiting for backend data"}</p>
                 </div>
               </div>
             </article>
@@ -550,8 +565,8 @@ const Index = () => {
               </div>
             )}
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">{player.data?.title ?? "Night Circuit"}</p>
-              <p className="truncate text-xs text-muted-foreground">{player.data?.artist ?? "Mira Kade"}</p>
+              <p className="truncate text-sm font-semibold">{playerUnavailable ? "Service Unavailable" : player.data?.title ?? "No track playing"}</p>
+              <p className="truncate text-xs text-muted-foreground">{playerUnavailable ? "Service Unavailable" : player.data?.artist ?? "Unknown artist"}</p>
             </div>
           </div>
 
