@@ -34,6 +34,13 @@ export type ApiPlayer = {
   volume: number;
 };
 
+export type ApiLyrics = {
+  title: string;
+  artist: string;
+  source: string;
+  lines: string[];
+};
+
 type PlaybackAction = "previous" | "play_pause" | "next" | "stop";
 
 const BASE_URL = import.meta.env.VITE_VOXARIA_API_BASE_URL;
@@ -52,6 +59,7 @@ const ENDPOINTS = {
   cleanCache: "/system/audio-cache/clean",
   sessionRestore: "/system/settings/session-restore",
   volume: "/music/volume",
+  lyrics: "/music/lyrics",
 } as const;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -97,6 +105,11 @@ export const voxariaApi = {
       method: "POST",
       body: JSON.stringify({ volume }),
     }),
+  getLyrics: (title: string, artist: string) =>
+    request<ApiLyrics>(ENDPOINTS.lyrics, {
+      method: "POST",
+      body: JSON.stringify({ title, artist }),
+    }),
 };
 
 export const mockData = {
@@ -121,4 +134,15 @@ export const mockData = {
     playing: true,
     volume: 68,
   } as ApiPlayer,
+  lyrics: {
+    title: "Night Circuit",
+    artist: "Mira Kade",
+    source: "Temporary adapter",
+    lines: [
+      "Streetlights whisper in the static glow",
+      "Pulse of midnight running through the low",
+      "Neon hearts and engines in the rain",
+      "We keep moving through electric veins",
+    ],
+  } as ApiLyrics,
 };
