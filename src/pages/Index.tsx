@@ -213,7 +213,7 @@ const Index = () => {
       setActiveLine((prev) => (prev + 1) % lyricsData.lines.length);
     }, 3800);
     return () => clearInterval(interval);
-  }, [player.data?.playing, lyricsData.lines]);
+  }, [player.data?.playing, lyricsData?.lines]);
 
   useEffect(() => {
     if (typeof player.data?.volume === "number") {
