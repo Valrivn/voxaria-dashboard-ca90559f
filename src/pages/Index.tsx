@@ -558,8 +558,8 @@ const Index = () => {
               </div>
             )}
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">{player.data?.title ?? "Night Circuit"}</p>
-              <p className="truncate text-xs text-muted-foreground">{player.data?.artist ?? "Mira Kade"}</p>
+              <p className="truncate text-sm font-semibold">{playerUnavailable ? "Service Unavailable" : player.data?.title ?? "No track playing"}</p>
+              <p className="truncate text-xs text-muted-foreground">{playerUnavailable ? "Service Unavailable" : player.data?.artist ?? "Unknown artist"}</p>
             </div>
           </div>
 
