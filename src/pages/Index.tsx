@@ -43,7 +43,7 @@ const formatSec = (s: number) => {
   return `${m}:${sec}`;
 };
 
-const artFallback = "https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=300&h=300&fit=crop";
+const artFallback = "/placeholder.svg";
 
 const trackRow = (track: ApiTrack, dimmed = false) => (
   <div
@@ -184,6 +184,7 @@ const Index = () => {
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Youtube className="h-4 w-4" />
                 <Disc3 className="h-4 w-4" />
+                <span className="text-[11px]">Spotify</span>
               </div>
               <Input
                 value={searchTerm}
