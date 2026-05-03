@@ -249,6 +249,7 @@ const Index = () => {
   const loading = queue.isLoading || status.isLoading || cache.isLoading || settings.isLoading || player.isLoading;
   const playerUnavailable = player.isError;
   const queueUnavailable = queue.isError;
+  const lyricsServiceUnavailable = lyricsMutation.isError;
 
   const saveCurrentQueueAsPreset = (name: string) => {
     const label = name.trim();
@@ -355,7 +356,11 @@ const Index = () => {
                 </div>
 
                 <div className="mb-3 rounded-md border border-primary/45 bg-accent/25 px-3 py-2 text-sm text-primary neon-glow">
-                  {lyricsUnavailable ? "Lyrics not available" : `Source: ${lyricsData?.source || "Unknown"}`}
+                  {lyricsServiceUnavailable
+                    ? "Service Unavailable"
+                    : lyricsUnavailable
+                      ? "Lyrics not available"
+                      : `Source: ${lyricsData?.source || "Unknown"}`}
                 </div>
 
                 <div className="h-full overflow-y-auto pr-2">
@@ -375,7 +380,9 @@ const Index = () => {
                       </button>
                       ))
                     ) : (
-                      <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">Lyrics not available</p>
+                      <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
+                        {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
+                      </p>
                     )}
                   </div>
                 </div>
