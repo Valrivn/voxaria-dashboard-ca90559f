@@ -146,6 +146,12 @@ const Index = () => {
     },
   });
 
+  const summonBotMutation = useMutation({
+    mutationFn: voxariaApi.summonBot,
+    onSuccess: () => toast({ title: "Summon sent", description: "Voxaria join request sent." }),
+    onError: () => toast({ title: "Summon failed", description: "Could not send join request.", variant: "destructive" }),
+  });
+
   const leaveMutation = useMutation({
     mutationFn: voxariaApi.leaveVoice,
     onSuccess: () => toast({ title: "Disconnected", description: "Voxaria left the voice channel." }),
@@ -312,6 +318,13 @@ const Index = () => {
                 onClick={() => searchMutation.mutate(searchTerm.trim())}
               >
                 {searchMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
+              </Button>
+              <Button
+                className="h-10 rounded-md neon-glow"
+                disabled={summonBotMutation.isPending}
+                onClick={() => summonBotMutation.mutate()}
+              >
+                {summonBotMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Summon Bot"}
               </Button>
             </div>
           </header>

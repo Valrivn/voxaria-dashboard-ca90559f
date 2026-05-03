@@ -54,6 +54,7 @@ const ENDPOINTS = {
   search: "/music/search",
   playback: "/music/playback",
   clearQueue: "/music/queue/clear",
+  join: "/discord/join",
   leave: "/discord/leave",
   cleanCache: "/system/audio-cache/clean",
   sessionRestore: "/system/settings/session-restore",
@@ -94,6 +95,7 @@ export const voxariaApi = {
   playback: (action: PlaybackAction) =>
     request<{ ok: boolean }>(ENDPOINTS.playback, { method: "POST", body: JSON.stringify({ action }) }),
   clearQueue: () => request<{ ok: boolean }>(ENDPOINTS.clearQueue, { method: "POST" }),
+  summonBot: () => request<{ ok: boolean }>(ENDPOINTS.join, { method: "POST" }),
   leaveVoice: () => request<{ ok: boolean }>(ENDPOINTS.leave, { method: "POST" }),
   cleanAudioCache: () => request<{ ok: boolean; removedMb?: number }>(ENDPOINTS.cleanCache, { method: "POST" }),
   setSessionRestore: (enabled: boolean) =>
