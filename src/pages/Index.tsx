@@ -1,8 +1,6 @@
-import { useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ChevronLeft,
-  ChevronRight,
   Disc3,
   History,
   ListMusic,
@@ -34,10 +32,11 @@ import { mockData, voxariaApi, type ApiLyrics, type ApiTrack } from "@/lib/voxar
 type NavItem = { label: string; icon: typeof Disc3 };
 
 const navItems: NavItem[] = [
-  { label: "Dashboard", icon: Disc3 },
+  { label: "Visualizer", icon: Disc3 },
   { label: "Queue", icon: ListMusic },
+  { label: "Sessions", icon: History },
   { label: "Settings", icon: Settings2 },
-  { label: "Server Selector", icon: Server },
+  { label: "Shard", icon: Server },
 ];
 
 const formatSec = (s: number) => {
@@ -46,48 +45,43 @@ const formatSec = (s: number) => {
   return `${m}:${sec}`;
 };
 
-const trackTile = (track: ApiTrack, dimmed = false) => (
+const queueRow = (track: ApiTrack) => (
   <article
     key={track.id}
-    className="group w-[196px] shrink-0 rounded-md border border-border/70 bg-panel-soft/70 p-2 transition hover:border-primary/45 hover:bg-muted/70"
+    className="grid grid-cols-[38px_1fr_52px_28px] items-center gap-2 rounded-md border border-border/70 bg-panel/80 p-2 transition hover:border-primary/55 hover:neon-glow"
   >
-    <div className="relative mb-2 overflow-hidden rounded-sm border border-border/70 bg-panel">
-      {track.art ? (
-        <img src={track.art} alt={`${track.title} cover`} loading="lazy" className="h-28 w-full object-cover" />
-      ) : (
-        <div className="flex h-28 w-full items-center justify-center">
-          <Disc3 className="h-5 w-5 text-muted-foreground" />
-        </div>
-      )}
-      <span className="absolute right-1.5 top-1.5 rounded-sm bg-background/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-        {track.duration}
-      </span>
+    {track.art ? (
+      <img src={track.art} alt={`${track.title} cover`} loading="lazy" className="h-9 w-9 rounded object-cover" />
+    ) : (
+      <div className="flex h-9 w-9 items-center justify-center rounded border border-border bg-panel-soft">
+        <Disc3 className="h-3.5 w-3.5 text-muted-foreground" />
+      </div>
+    )}
+
+    <div className="min-w-0">
+      <p className="truncate text-xs font-semibold text-foreground">{track.title}</p>
+      <p className="truncate text-[11px] text-muted-foreground">{track.artist}</p>
     </div>
 
-    <div className="min-w-0 space-y-1">
-      <p className={`truncate text-sm font-medium ${dimmed ? "text-muted-foreground" : "text-foreground"}`}>{track.title}</p>
-      <p className="truncate text-xs text-muted-foreground">{track.artist}</p>
-      <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-        {track.requesterAvatar ? (
-          <img src={track.requesterAvatar} alt={`${track.requestedBy} avatar`} loading="lazy" className="h-5 w-5 rounded-full border border-border object-cover" />
-        ) : (
-          <div className="flex h-5 w-5 items-center justify-center rounded-full border border-border bg-panel">
-            <UserCircle2 className="h-3 w-3 text-muted-foreground" />
-          </div>
-        )}
-        <span className="truncate">{track.requestedBy}</span>
+    <p className="text-[10px] text-muted-foreground">{track.duration}</p>
+
+    {track.requesterAvatar ? (
+      <img src={track.requesterAvatar} alt={`${track.requestedBy} avatar`} loading="lazy" className="h-7 w-7 rounded-full border border-border object-cover" />
+    ) : (
+      <div className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-panel-soft">
+        <UserCircle2 className="h-3.5 w-3.5 text-muted-foreground" />
       </div>
-    </div>
+    )}
   </article>
 );
 
 const Index = () => {
   const queryClient = useQueryClient();
-  const queueLaneRef = useRef<HTMLDivElement>(null);
-  const historyLaneRef = useRef<HTMLDivElement>(null);
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [lyricsData, setLyricsData] = useState<ApiLyrics | null>(null);
+  const [requestTerm, setRequestTerm] = useState("");
+  const [lyricsData, setLyricsData] = useState<ApiLyrics>(mockData.lyrics);
+  const [activeLine, setActiveLine] = useState(0);
 
   const queue = useQuery({ queryKey: ["queue"], queryFn: async () => voxariaApi.getQueue().catch(() => mockData.queue), refetchInterval: 10000 });
   const history = useQuery({ queryKey: ["history"], queryFn: async () => voxariaApi.getHistory().catch(() => mockData.history), refetchInterval: 14000 });
@@ -111,6 +105,16 @@ const Index = () => {
       refreshAll();
     },
     onError: () => toast({ title: "Search failed", description: "Could not reach backend endpoint.", variant: "destructive" }),
+  });
+
+  const requestMutation = useMutation({
+    mutationFn: async (query: string) => voxariaApi.search(query),
+    onSuccess: () => {
+      toast({ title: "Request submitted", description: "Song request pushed to queue." });
+      setRequestTerm("");
+      void queryClient.invalidateQueries({ queryKey: ["queue"] });
+    },
+    onError: () => toast({ title: "Request failed", description: "Could not submit request.", variant: "destructive" }),
   });
 
   const playbackMutation = useMutation({
@@ -154,13 +158,23 @@ const Index = () => {
     mutationFn: async () => voxariaApi.getLyrics(player.data?.title ?? "", player.data?.artist ?? ""),
     onSuccess: (data) => {
       setLyricsData(data);
-      toast({ title: "Lyrics loaded", description: "Connected to lyrics endpoint." });
+      setActiveLine(0);
+      toast({ title: "Lyrics synced", description: "Live lyrics loaded." });
     },
     onError: () => {
       setLyricsData(mockData.lyrics);
-      toast({ title: "Lyrics fallback", description: "Using adapter sample lyrics until API is ready." });
+      setActiveLine(0);
+      toast({ title: "Lyrics fallback", description: "Using temporary adapter source." });
     },
   });
+
+  useEffect(() => {
+    if (!player.data?.playing || !lyricsData.lines.length) return;
+    const interval = setInterval(() => {
+      setActiveLine((prev) => (prev + 1) % lyricsData.lines.length);
+    }, 3800);
+    return () => clearInterval(interval);
+  }, [player.data?.playing, lyricsData.lines]);
 
   const cacheProgress = useMemo(() => {
     if (!cache.data) return 0;
@@ -172,26 +186,15 @@ const Index = () => {
     return Math.min(100, Math.round((player.data.positionSec / player.data.durationSec) * 100));
   }, [player.data]);
 
-  const loading = queue.isLoading || history.isLoading || status.isLoading || cache.isLoading || settings.isLoading || player.isLoading;
-
-  const scrollLane = (ref: RefObject<HTMLDivElement>, direction: "left" | "right") => {
-    if (!ref.current) return;
-    ref.current.scrollBy({ left: direction === "left" ? -460 : 460, behavior: "smooth" });
-  };
-
-  const onLaneWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-    e.preventDefault();
-    e.currentTarget.scrollLeft += e.deltaY;
-  };
+  const loading = queue.isLoading || status.isLoading || cache.isLoading || settings.isLoading || player.isLoading;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="relative min-h-screen">
-        <aside className="fixed left-0 top-0 z-20 flex h-screen w-[260px] flex-col border-r border-border/70 bg-panel/90 p-4 backdrop-blur-xl">
-          <div className="mb-8 rounded-md border border-primary/35 bg-panel-soft/85 p-3 shadow-soft">
+      <div className="relative min-h-screen lg:pl-[240px]">
+        <aside className="fixed left-0 top-0 z-20 hidden h-screen w-[240px] flex-col border-r border-border/70 bg-panel/90 p-4 backdrop-blur-xl lg:flex">
+          <div className="mb-8 rounded-md border border-primary/40 bg-panel-soft/85 p-3 shadow-soft neon-glow">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Discord Music Bot</p>
-            <h1 className="text-xl font-semibold">Voxaria</h1>
+            <h1 className="text-xl font-semibold text-primary">Voxaria</h1>
           </div>
 
           <nav className="space-y-2">
@@ -200,8 +203,8 @@ const Index = () => {
                 key={label}
                 className={`flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition ${
                   idx === 0
-                    ? "border-primary/55 bg-accent/60 text-accent-foreground shadow-soft"
-                    : "border-border/70 bg-panel-soft/65 text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                    ? "border-primary/65 bg-accent/70 text-accent-foreground shadow-soft neon-glow"
+                    : "border-border/70 bg-panel-soft/65 text-muted-foreground hover:border-primary/55 hover:text-foreground"
                 }`}
               >
                 <Icon className="h-4 w-4" />
@@ -211,27 +214,28 @@ const Index = () => {
           </nav>
 
           <div className="mt-auto rounded-md border border-border/70 bg-panel-soft/75 p-3 text-xs text-muted-foreground">
-            API Mode: <span className="text-foreground">Temporary Adapter</span>
+            <p>Status: <span className="text-success">{status.data?.online ? "Online" : "Offline"}</span></p>
+            <p>Shard #{status.data?.activeShard ?? 0} · {status.data?.pingMs ?? 0}ms</p>
           </div>
         </aside>
 
-        <main className="ml-[260px] flex min-h-screen min-w-[1080px] w-[calc(100vw-260px)] flex-col pb-36">
+        <main className="flex min-h-screen flex-col pb-36">
           <header className="sticky top-0 z-10 border-b border-border/70 bg-background/85 p-4 backdrop-blur-xl">
-            <div className="flex items-center gap-3 rounded-md border border-border/70 bg-panel-soft/70 p-2 shadow-soft">
-              <Search className="ml-1 h-4 w-4 text-muted-foreground" />
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border/70 bg-panel-soft/70 p-2 shadow-soft">
+              <Search className="ml-1 h-4 w-4 text-primary" />
               <div className="flex items-center gap-2 text-muted-foreground">
-                <Youtube className="h-4 w-4" />
-                <Disc3 className="h-4 w-4" />
+                <Youtube className="h-4 w-4 text-primary" />
+                <Disc3 className="h-4 w-4 text-primary" />
                 <span className="text-[11px]">Spotify</span>
               </div>
               <Input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search YouTube, Spotify, or paste a link..."
-                className="h-10 border-none bg-transparent focus-visible:ring-0"
+                placeholder="Search songs..."
+                className="h-10 min-w-[220px] flex-1 border-none bg-transparent focus-visible:ring-0"
               />
               <Button
-                className="h-10 rounded-md"
+                className="h-10 rounded-md neon-glow"
                 disabled={searchMutation.isPending || !searchTerm.trim()}
                 onClick={() => searchMutation.mutate(searchTerm.trim())}
               >
@@ -240,137 +244,124 @@ const Index = () => {
             </div>
           </header>
 
-          <section className="space-y-4 p-4">
-            <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="flex items-center gap-2 text-lg font-semibold">
-                  <ListMusic className="h-5 w-5 text-primary" /> Up Next
-                </h2>
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-accent text-accent-foreground">Queue</Badge>
-                  <Button variant="secondary" size="icon" className="h-8 w-8" onClick={() => scrollLane(queueLaneRef, "left")}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button variant="secondary" size="icon" className="h-8 w-8" onClick={() => scrollLane(queueLaneRef, "right")}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-
-              <div
-                ref={queueLaneRef}
-                onWheel={onLaneWheel}
-                className="flex gap-3 overflow-x-auto pb-2 [scrollbar-color:hsl(var(--primary))_transparent]"
-              >
-                {loading ? <p className="text-sm text-muted-foreground">Loading queue...</p> : (queue.data ?? []).map((t) => trackTile(t))}
-              </div>
-            </article>
-
-            <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="flex items-center gap-2 text-lg font-semibold">
-                  <History className="h-5 w-5 text-primary" /> Session History
-                </h2>
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-muted text-muted-foreground">Recent</Badge>
-                  <Button variant="secondary" size="icon" className="h-8 w-8" onClick={() => scrollLane(historyLaneRef, "left")}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button variant="secondary" size="icon" className="h-8 w-8" onClick={() => scrollLane(historyLaneRef, "right")}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-
-              <div
-                ref={historyLaneRef}
-                onWheel={onLaneWheel}
-                className="flex gap-3 overflow-x-auto pb-2 [scrollbar-color:hsl(var(--primary))_transparent]"
-              >
-                {loading ? <p className="text-sm text-muted-foreground">Loading history...</p> : (history.data ?? []).map((t) => trackTile(t, true))}
-              </div>
-            </article>
-
-            <div className="grid grid-cols-4 gap-4">
-              <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
-                <h3 className="mb-3 text-base font-semibold">Server & Shard Status</h3>
-                <div className="space-y-2 text-sm">
-                  <p>
-                    Active Shard: <span className="font-medium text-foreground">#{status.data?.activeShard ?? 0}</span>
-                  </p>
-                  <p>
-                    Ping: <span className="font-medium text-foreground">{status.data?.pingMs ?? 42}ms</span>
-                  </p>
-                  <p>
-                    Uptime: <span className="font-medium text-foreground">{status.data?.uptime ?? "24h 12m"}</span>
-                  </p>
-                  <Button
-                    variant="outline"
-                    className="mt-3 w-full border-success/40 bg-success/10 text-success hover:bg-success/20"
-                    onDoubleClick={() => playbackMutation.mutate("play_pause")}
-                  >
-                    <span className="relative mr-2 inline-flex h-2.5 w-2.5">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-70" />
-                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-success" />
-                    </span>
-                    Double-click green to toggle song
-                  </Button>
-                </div>
-              </article>
-
-              <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
-                <h3 className="mb-3 text-base font-semibold">Audio Cache Status</h3>
-                <p className="mb-2 text-sm text-muted-foreground">Cache Size: {cache.data?.sizeMb ?? 142} MB</p>
-                <Progress value={cacheProgress} className="h-2" />
-                <p className="mt-2 text-xs text-muted-foreground">{cacheProgress}% of allocated capacity</p>
-                <Button
-                  variant="outline"
-                  className="mt-4 w-full border-warning/60 bg-warning/15 text-warning hover:bg-warning/25"
-                  onClick={() => cleanCacheMutation.mutate()}
-                  disabled={cleanCacheMutation.isPending}
-                >
-                  {cleanCacheMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Clean Audio Cache
-                </Button>
-              </article>
-
-              <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
-                <h3 className="mb-3 text-base font-semibold">System Settings</h3>
-                <div className="flex items-center justify-between rounded-md border border-border/70 bg-panel p-3">
+          <section className="flex-1 p-4">
+            <div className="grid h-full gap-4 xl:grid-cols-[1.8fr_380px]">
+              <article className="relative flex min-h-[520px] flex-col rounded-md border border-primary/35 bg-panel-soft/75 p-5 shadow-soft neon-edge">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <p className="text-sm font-medium">Enable Session Restore</p>
-                    <p className="text-xs text-muted-foreground">Restore queue/session after reconnect.</p>
+                    <h2 className="text-xl font-bold text-primary">Expanded Visualizer</h2>
+                    <p className="text-sm text-muted-foreground">
+                      {player.data?.title ?? "Night Circuit"} — {player.data?.artist ?? "Mira Kade"}
+                    </p>
                   </div>
-                  <Switch
-                    checked={settings.data?.sessionRestoreEnabled ?? false}
-                    onCheckedChange={(value) => sessionRestoreMutation.mutate(value)}
-                    disabled={sessionRestoreMutation.isPending}
-                  />
+
+                  <Button variant="outline" className="border-primary/55 text-primary hover:bg-accent/40" onClick={() => lyricsMutation.mutate()}>
+                    Refresh Lyrics
+                  </Button>
+                </div>
+
+                <div className="mb-3 rounded-md border border-primary/45 bg-accent/25 px-3 py-2 text-sm text-primary neon-glow">
+                  Source: {lyricsData.source || "Temporary adapter"}
+                </div>
+
+                <div className="h-full overflow-y-auto pr-2">
+                  <div className="space-y-2">
+                    {lyricsData.lines.map((line, idx) => (
+                      <button
+                        key={`${line}-${idx}`}
+                        onClick={() => setActiveLine(idx)}
+                        className={`block w-full rounded-sm px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
+                          idx === activeLine
+                            ? "bg-accent/35 text-primary neon-glow"
+                            : "text-foreground/85 hover:bg-muted/50 hover:text-foreground"
+                        }`}
+                      >
+                        {line}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </article>
 
-              <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl">
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-base font-semibold">Lyrics</h3>
-                  <Button size="sm" variant="secondary" onClick={() => lyricsMutation.mutate()} disabled={lyricsMutation.isPending}>
-                    {lyricsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Pull Lyrics"}
-                  </Button>
-                </div>
-                <p className="mb-2 text-xs text-muted-foreground">
-                  {lyricsData?.source ? `Source: ${lyricsData.source}` : "Ready for Discord API lyrics endpoint"}
-                </p>
-                <div className="max-h-[130px] space-y-1 overflow-y-auto rounded-md border border-border/70 bg-panel p-2 text-xs text-muted-foreground">
-                  {(lyricsData?.lines ?? ["Click Pull Lyrics to request lines for the current track."]).map((line, i) => (
-                    <p key={`${line}-${i}`}>{line}</p>
-                  ))}
-                </div>
-              </article>
+              <aside className="flex min-h-[520px] flex-col gap-4 rounded-md border border-border/70 bg-panel-soft/70 p-3 shadow-soft">
+                <section className="rounded-md border border-primary/40 bg-panel/80 p-3 neon-glow">
+                  <h3 className="mb-2 text-sm font-semibold text-primary">Request Song</h3>
+                  <form
+                    className="space-y-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!requestTerm.trim()) return;
+                      requestMutation.mutate(requestTerm.trim());
+                    }}
+                  >
+                    <Input
+                      value={requestTerm}
+                      onChange={(e) => setRequestTerm(e.target.value)}
+                      placeholder="Type song title, artist, or URL..."
+                      className="h-9 bg-panel-soft/60"
+                    />
+                    <Button className="h-9 w-full neon-glow" disabled={requestMutation.isPending || !requestTerm.trim()}>
+                      {requestMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Request"}
+                    </Button>
+                  </form>
+                </section>
+
+                <section className="flex min-h-0 flex-1 flex-col rounded-md border border-primary/40 bg-panel/80 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <h3 className="text-base font-semibold text-primary">Upcoming Queue</h3>
+                    <Badge className="bg-accent text-accent-foreground">{(queue.data ?? []).length} tracks</Badge>
+                  </div>
+
+                  <div className="space-y-2 overflow-y-auto pr-1">
+                    {(queue.data ?? []).map((track) => queueRow(track))}
+                  </div>
+                </section>
+              </aside>
             </div>
+          </section>
+
+          <section className="grid gap-4 px-4 pb-4 md:grid-cols-3">
+            <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft">
+              <h3 className="mb-2 text-sm font-semibold">Audio Cache Status</h3>
+              <p className="mb-2 text-xs text-muted-foreground">Cache Size: {cache.data?.sizeMb ?? 142} MB</p>
+              <Progress value={cacheProgress} className="h-2" />
+              <Button
+                variant="outline"
+                className="mt-3 w-full border-primary/50 text-primary hover:bg-accent/40"
+                onClick={() => cleanCacheMutation.mutate()}
+                disabled={cleanCacheMutation.isPending}
+              >
+                {cleanCacheMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Clean Audio Cache
+              </Button>
+            </article>
+
+            <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft">
+              <h3 className="mb-2 text-sm font-semibold">System Settings</h3>
+              <div className="flex items-center justify-between rounded-md border border-border/70 bg-panel p-3">
+                <div>
+                  <p className="text-sm font-medium">Enable Session Restore</p>
+                  <p className="text-xs text-muted-foreground">Restore queue/session after reconnect.</p>
+                </div>
+                <Switch
+                  checked={settings.data?.sessionRestoreEnabled ?? false}
+                  onCheckedChange={(value) => sessionRestoreMutation.mutate(value)}
+                  disabled={sessionRestoreMutation.isPending}
+                />
+              </div>
+            </article>
+
+            <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft">
+              <h3 className="mb-2 text-sm font-semibold">Recent History</h3>
+              <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 132 }}>
+                {(history.data ?? []).slice(0, 3).map((track) => queueRow(track))}
+              </div>
+            </article>
           </section>
         </main>
       </div>
 
       <footer className="fixed bottom-0 left-0 right-0 z-30 border-t border-border/70 bg-panel/90 px-4 py-3 backdrop-blur-xl">
-        <div className="grid grid-cols-[1.2fr_1.6fr_1fr] items-center gap-4">
+        <div className="grid grid-cols-1 items-center gap-4 md:grid-cols-[1.2fr_1.6fr_1fr]">
           <div className="flex min-w-0 items-center gap-3">
             {player.data?.art ? (
               <img src={player.data.art} alt="Now playing cover" className="h-14 w-14 rounded object-cover" />
@@ -387,16 +378,16 @@ const Index = () => {
 
           <div>
             <div className="mb-2 flex items-center justify-center gap-2">
-              <Button size="icon" variant="secondary" className="opacity-80" onClick={() => playbackMutation.mutate("previous")}>
+              <Button size="icon" variant="secondary" className="border border-primary/35 text-primary hover:bg-accent/35" onClick={() => playbackMutation.mutate("previous")}>
                 <SkipBack className="h-4 w-4" />
               </Button>
-              <Button size="icon" className="h-12 w-12 rounded-full shadow-soft" onClick={() => playbackMutation.mutate("play_pause")}>
+              <Button size="icon" className="h-12 w-12 rounded-full neon-glow" onClick={() => playbackMutation.mutate("play_pause")}>
                 {player.data?.playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
               </Button>
-              <Button size="icon" variant="secondary" className="opacity-80" onClick={() => playbackMutation.mutate("next")}>
+              <Button size="icon" variant="secondary" className="border border-primary/35 text-primary hover:bg-accent/35" onClick={() => playbackMutation.mutate("next")}>
                 <SkipForward className="h-4 w-4" />
               </Button>
-              <Button size="icon" variant="secondary" className="opacity-70" onClick={() => playbackMutation.mutate("stop")}>
+              <Button size="icon" variant="secondary" className="border border-primary/35 text-primary hover:bg-accent/35" onClick={() => playbackMutation.mutate("stop")}>
                 <Square className="h-4 w-4" />
               </Button>
             </div>
@@ -409,19 +400,25 @@ const Index = () => {
 
           <div className="flex items-center justify-end gap-3">
             <div className="flex w-44 items-center gap-2">
-              <Volume2 className="h-4 w-4 text-muted-foreground" />
-              <Slider value={[player.data?.volume ?? 68]} max={100} step={1} onValueCommit={([v]) => volumeMutation.mutate(v)} />
+              <Volume2 className="h-4 w-4 text-primary" />
+              <Slider value={[player.data?.volume ?? 68]} max={100} step={1} onValueCommit={([v]) => volumeMutation.mutate(v)} className="neon-glow rounded-full" />
             </div>
-            <Separator orientation="vertical" className="h-7" />
-            <Button variant="outline" onClick={() => clearQueueMutation.mutate()}>
+            <Separator orientation="vertical" className="hidden h-7 md:block" />
+            <Button variant="outline" className="border-primary/55 text-primary hover:bg-accent/35" onClick={() => clearQueueMutation.mutate()}>
               Clear Queue
             </Button>
-            <Button variant="destructive" size="icon" onClick={() => leaveMutation.mutate()}>
+            <Button variant="outline" className="border-primary/55 text-primary hover:bg-accent/35" size="icon" onClick={() => leaveMutation.mutate()}>
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
         </div>
       </footer>
+
+      {loading && (
+        <div className="pointer-events-none fixed right-4 top-4 z-40 rounded-md border border-primary/45 bg-panel px-3 py-1 text-xs text-primary neon-glow">
+          Syncing live data...
+        </div>
+      )}
     </div>
   );
 };
