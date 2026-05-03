@@ -93,7 +93,7 @@ const Index = () => {
   const [lyricsData, setLyricsData] = useState<ApiLyrics | null>(null);
   const [activeLine, setActiveLine] = useState(0);
   const [lyricsUnavailable, setLyricsUnavailable] = useState(false);
-  const [uiVolume, setUiVolume] = useState(mockData.player.volume);
+  const [uiVolume, setUiVolume] = useState(100);
   const [savedPlaylists, setSavedPlaylists] = useState<SessionPreset[]>([]);
   const [savePresetOpen, setSavePresetOpen] = useState(false);
   const [presetName, setPresetName] = useState("");
@@ -247,6 +247,8 @@ const Index = () => {
   const boostActive = displayVolume > 100;
 
   const loading = queue.isLoading || status.isLoading || cache.isLoading || settings.isLoading || player.isLoading;
+  const playerUnavailable = player.isError;
+  const queueUnavailable = queue.isError;
 
   const saveCurrentQueueAsPreset = (name: string) => {
     const label = name.trim();
@@ -407,7 +409,11 @@ const Index = () => {
                   </div>
 
                   <div className="space-y-2 overflow-y-auto pr-1">
-                    {(queue.data ?? []).map((track) => queueRow(track))}
+                    {queueUnavailable ? (
+                      <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">Service Unavailable</p>
+                    ) : (
+                      (queue.data ?? []).map((track) => queueRow(track))
+                    )}
                   </div>
                 </section>
               </aside>
