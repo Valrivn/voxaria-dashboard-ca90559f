@@ -338,7 +338,9 @@ const Index = () => {
                   <div>
                     <h2 className="text-xl font-bold text-primary">Expanded Visualizer</h2>
                     <p className="text-sm text-muted-foreground">
-                       {player.data?.title ?? "No track playing"} — {player.data?.artist ?? "Unknown artist"}
+                      {playerUnavailable
+                        ? "Service Unavailable"
+                        : `${player.data?.title ?? "No track playing"} — ${player.data?.artist ?? "Unknown artist"}`}
                     </p>
                   </div>
 
@@ -442,8 +444,8 @@ const Index = () => {
                 )}
 
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-foreground">{player.data?.title ?? "No track playing"}</p>
-                  <p className="truncate text-xs text-muted-foreground">{player.data?.artist ?? "Waiting for backend data"}</p>
+                  <p className="truncate text-sm font-semibold text-foreground">{playerUnavailable ? "Service Unavailable" : player.data?.title ?? "No track playing"}</p>
+                  <p className="truncate text-xs text-muted-foreground">{playerUnavailable ? "Service Unavailable" : player.data?.artist ?? "Waiting for backend data"}</p>
                 </div>
               </div>
             </article>
