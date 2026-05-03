@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ChevronLeft,
+  ChevronRight,
   Disc3,
   History,
   ListMusic,
   Loader2,
   Pause,
-  Play,
   UserCircle2,
   Search,
   Server,
@@ -44,30 +45,37 @@ const formatSec = (s: number) => {
   return `${m}:${sec}`;
 };
 
-const trackRow = (track: ApiTrack, dimmed = false) => (
+const trackTile = (track: ApiTrack, dimmed = false) => (
   <div
     key={track.id}
-    className="group grid grid-cols-[48px_1fr_60px_36px] items-center gap-3 rounded-md border border-border/70 bg-panel-soft/70 p-2 transition hover:border-primary/45 hover:bg-muted/70"
+    className="group w-[196px] shrink-0 rounded-md border border-border/70 bg-panel-soft/70 p-2 transition hover:border-primary/45 hover:bg-muted/70"
   >
-    {track.art ? (
-      <img src={track.art} alt={`${track.title} cover`} loading="lazy" className="h-12 w-12 rounded object-cover" />
-    ) : (
-      <div className="flex h-12 w-12 items-center justify-center rounded border border-border bg-panel">
-        <Disc3 className="h-4 w-4 text-muted-foreground" />
-      </div>
-    )}
-    <div className="min-w-0">
+    <div className="relative mb-2 overflow-hidden rounded-sm border border-border/70 bg-panel">
+      {track.art ? (
+        <img src={track.art} alt={`${track.title} cover`} loading="lazy" className="h-28 w-full object-cover" />
+      ) : (
+        <div className="flex h-28 w-full items-center justify-center">
+          <Disc3 className="h-5 w-5 text-muted-foreground" />
+        </div>
+      )}
+      <span className="absolute right-1.5 top-1.5 rounded-sm bg-background/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+        {track.duration}
+      </span>
+    </div>
+    <div className="min-w-0 space-y-1">
       <p className={`truncate text-sm font-medium ${dimmed ? "text-muted-foreground" : "text-foreground"}`}>{track.title}</p>
       <p className="truncate text-xs text-muted-foreground">{track.artist}</p>
-    </div>
-    <p className="text-xs text-muted-foreground">{track.duration}</p>
-    {track.requesterAvatar ? (
-      <img src={track.requesterAvatar} alt={`${track.requestedBy} avatar`} loading="lazy" className="h-9 w-9 rounded-full border border-border object-cover" />
-    ) : (
-      <div className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-panel">
-        <UserCircle2 className="h-4 w-4 text-muted-foreground" />
+      <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+        {track.requesterAvatar ? (
+          <img src={track.requesterAvatar} alt={`${track.requestedBy} avatar`} loading="lazy" className="h-5 w-5 rounded-full border border-border object-cover" />
+        ) : (
+          <div className="flex h-5 w-5 items-center justify-center rounded-full border border-border bg-panel">
+            <UserCircle2 className="h-3 w-3 text-muted-foreground" />
+          </div>
+        )}
+        <span className="truncate">{track.requestedBy}</span>
       </div>
-    )}
+    </div>
   </div>
 );
 
