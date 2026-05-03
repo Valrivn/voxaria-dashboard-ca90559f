@@ -27,6 +27,14 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { mockData, voxariaApi, type ApiLyrics, type ApiTrack } from "@/lib/voxaria-api";
 
@@ -86,11 +94,9 @@ const Index = () => {
   const [activeLine, setActiveLine] = useState(0);
   const [lyricsUnavailable, setLyricsUnavailable] = useState(false);
   const [uiVolume, setUiVolume] = useState(mockData.player.volume);
-  const [savedPlaylists, setSavedPlaylists] = useState<SessionPreset[]>([
-    { id: "sp-1", name: "Late Night Coding", tracks: 24 },
-    { id: "sp-2", name: "Workout Mix", tracks: 31 },
-    { id: "sp-3", name: "Focus Session", tracks: 18 },
-  ]);
+  const [savedPlaylists, setSavedPlaylists] = useState<SessionPreset[]>([]);
+  const [savePresetOpen, setSavePresetOpen] = useState(false);
+  const [presetName, setPresetName] = useState("");
 
   const queue = useQuery({ queryKey: ["queue"], queryFn: async () => voxariaApi.getQueue().catch(() => mockData.queue), refetchInterval: 10000 });
   const history = useQuery({ queryKey: ["history"], queryFn: async () => voxariaApi.getHistory().catch(() => mockData.history), refetchInterval: 14000 });
@@ -236,12 +242,18 @@ const Index = () => {
 
   const loading = queue.isLoading || status.isLoading || cache.isLoading || settings.isLoading || player.isLoading;
 
-  const saveCurrentQueueAsPreset = () => {
-    const now = new Date();
-    const label = `Session ${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+  const saveCurrentQueueAsPreset = (name: string) => {
+    const label = name.trim();
+    if (!label) {
+      toast({ title: "Name required", description: "Enter a playlist name before saving.", variant: "destructive" });
+      return;
+    }
+
     const tracks = (queue.data ?? []).length;
     setSavedPlaylists((prev) => [{ id: crypto.randomUUID(), name: label, tracks }, ...prev].slice(0, 6));
     toast({ title: "Preset saved", description: `Saved ${tracks} tracks to ${label}.` });
+    setPresetName("");
+    setSavePresetOpen(false);
   };
 
   const loadPreset = (preset: SessionPreset) => {
