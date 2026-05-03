@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type RefObject } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft,
@@ -174,7 +174,7 @@ const Index = () => {
 
   const loading = queue.isLoading || history.isLoading || status.isLoading || cache.isLoading || settings.isLoading || player.isLoading;
 
-  const scrollLane = (ref: React.RefObject<HTMLDivElement>, direction: "left" | "right") => {
+  const scrollLane = (ref: RefObject<HTMLDivElement>, direction: "left" | "right") => {
     if (!ref.current) return;
     ref.current.scrollBy({ left: direction === "left" ? -460 : 460, behavior: "smooth" });
   };
