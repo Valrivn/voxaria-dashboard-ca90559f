@@ -7,6 +7,7 @@ import {
   Loader2,
   Pause,
   Play,
+  UserCircle2,
   Search,
   Server,
   Settings2,
@@ -50,23 +51,25 @@ const trackRow = (track: ApiTrack, dimmed = false) => (
     key={track.id}
     className="group grid grid-cols-[48px_1fr_60px_36px] items-center gap-3 rounded-md border border-border/70 bg-panel-soft/70 p-2 transition hover:border-primary/45 hover:bg-muted/70"
   >
-    <img
-      src={track.art || artFallback}
-      alt={`${track.title} cover`}
-      loading="lazy"
-      className="h-12 w-12 rounded object-cover"
-    />
+    {track.art ? (
+      <img src={track.art} alt={`${track.title} cover`} loading="lazy" className="h-12 w-12 rounded object-cover" />
+    ) : (
+      <div className="flex h-12 w-12 items-center justify-center rounded border border-border bg-panel">
+        <Disc3 className="h-4 w-4 text-muted-foreground" />
+      </div>
+    )}
     <div className="min-w-0">
       <p className={`truncate text-sm font-medium ${dimmed ? "text-muted-foreground" : "text-foreground"}`}>{track.title}</p>
       <p className="truncate text-xs text-muted-foreground">{track.artist}</p>
     </div>
     <p className="text-xs text-muted-foreground">{track.duration}</p>
-    <img
-      src={track.requesterAvatar || artFallback}
-      alt={`${track.requestedBy} avatar`}
-      loading="lazy"
-      className="h-9 w-9 rounded-full border border-border object-cover"
-    />
+    {track.requesterAvatar ? (
+      <img src={track.requesterAvatar} alt={`${track.requestedBy} avatar`} loading="lazy" className="h-9 w-9 rounded-full border border-border object-cover" />
+    ) : (
+      <div className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-panel">
+        <UserCircle2 className="h-4 w-4 text-muted-foreground" />
+      </div>
+    )}
   </div>
 );
 
@@ -290,7 +293,13 @@ const Index = () => {
       <footer className="fixed bottom-0 left-0 right-0 z-30 border-t border-border/70 bg-panel/90 px-4 py-3 backdrop-blur-xl">
         <div className="grid grid-cols-[1.2fr_1.6fr_1fr] items-center gap-4">
           <div className="flex min-w-0 items-center gap-3">
-            <img src={player.data?.art || artFallback} alt="Now playing cover" className="h-14 w-14 rounded object-cover" />
+            {player.data?.art ? (
+              <img src={player.data.art} alt="Now playing cover" className="h-14 w-14 rounded object-cover" />
+            ) : (
+              <div className="flex h-14 w-14 items-center justify-center rounded border border-border bg-panel">
+                <Disc3 className="h-5 w-5 text-muted-foreground" />
+              </div>
+            )}
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold">{player.data?.title ?? "Night Circuit"}</p>
               <p className="truncate text-xs text-muted-foreground">{player.data?.artist ?? "Mira Kade"}</p>
