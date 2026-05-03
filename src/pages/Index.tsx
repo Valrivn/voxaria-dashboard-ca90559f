@@ -468,28 +468,63 @@ const Index = () => {
             <article className="rounded-xl border border-primary/35 bg-panel-soft/70 p-4 shadow-soft neon-edge">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold text-primary">Saved Playlists</h3>
-                <Button size="sm" variant="outline" className="h-8 border-primary/55 text-primary hover:bg-accent/35" onClick={saveCurrentQueueAsPreset}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 border-primary/55 text-primary hover:bg-accent/35"
+                  onClick={() => setSavePresetOpen(true)}
+                >
                   <Plus className="mr-1 h-3.5 w-3.5" /> Save Current Queue as Preset
                 </Button>
               </div>
 
               <div className="space-y-2">
-                {savedPlaylists.map((preset) => (
-                  <div key={preset.id} className="flex items-center justify-between rounded-md border border-border/70 bg-panel/80 p-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-semibold text-foreground">{preset.name}</p>
-                      <p className="text-[11px] text-muted-foreground">{preset.tracks} tracks</p>
+                {savedPlaylists.length ? (
+                  savedPlaylists.map((preset) => (
+                    <div key={preset.id} className="flex items-center justify-between rounded-md border border-border/70 bg-panel/80 p-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-semibold text-foreground">{preset.name}</p>
+                        <p className="text-[11px] text-muted-foreground">{preset.tracks} tracks</p>
+                      </div>
+                      <Button size="sm" variant="outline" className="h-7 border-primary/55 text-primary hover:bg-accent/35" onClick={() => loadPreset(preset)}>
+                        Load
+                      </Button>
                     </div>
-                    <Button size="sm" variant="outline" className="h-7 border-primary/55 text-primary hover:bg-accent/35" onClick={() => loadPreset(preset)}>
-                      Load
-                    </Button>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">No saved playlists yet.</p>
+                )}
               </div>
             </article>
           </section>
         </main>
       </div>
+
+      <Dialog open={savePresetOpen} onOpenChange={setSavePresetOpen}>
+        <DialogContent className="max-w-sm border-primary/35 bg-panel text-foreground">
+          <DialogHeader>
+            <DialogTitle className="text-primary">Save queue as preset</DialogTitle>
+            <DialogDescription>Name this playlist to save it for this session.</DialogDescription>
+          </DialogHeader>
+
+          <Input
+            value={presetName}
+            onChange={(e) => setPresetName(e.target.value)}
+            placeholder="e.g. Late Night Coding"
+            className="bg-panel-soft/70"
+            autoFocus
+          />
+
+          <DialogFooter>
+            <Button variant="outline" className="border-primary/45 text-primary hover:bg-accent/35" onClick={() => setSavePresetOpen(false)}>
+              Cancel
+            </Button>
+            <Button className="neon-glow" onClick={() => saveCurrentQueueAsPreset(presetName)} disabled={!presetName.trim()}>
+              Save Playlist
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <footer className="fixed bottom-0 left-0 right-0 z-30 border-t border-border/70 bg-panel/90 px-4 py-3 backdrop-blur-xl">
         <div className="grid grid-cols-1 items-center gap-4 md:grid-cols-[1.2fr_1.6fr_1fr]">
