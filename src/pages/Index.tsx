@@ -671,7 +671,9 @@ const Index = () => {
             <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft">
               <h3 className="mb-2 text-sm font-semibold">Recent History</h3>
               <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 132 }}>
-                {(history.data ?? []).slice(0, 3).map((track) => queueRow(track))}
+                {(history.data ?? []).slice(0, 3).map((track, index) =>
+                  queueRow(track, index, () => undefined, () => undefined, () => undefined, false),
+                )}
               </div>
             </article>
 
