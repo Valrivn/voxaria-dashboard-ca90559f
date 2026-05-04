@@ -181,6 +181,28 @@ const Index = () => {
   const currentPositionRef = useRef<HTMLSpanElement | null>(null);
   const totalDurationRef = useRef<HTMLSpanElement | null>(null);
 
+  const [sessionUsers, setSessionUsers] = useState<SessionUser[]>([
+    {
+      id: "u1",
+      name: "Astra",
+      roleLevel: 2,
+      permissions: { dj: true, staff: true },
+    },
+    {
+      id: "u2",
+      name: "Kai",
+      roleLevel: 1,
+      permissions: { dj: true, staff: false },
+    },
+    {
+      id: "u3",
+      name: "Nyx",
+      roleLevel: 0,
+      permissions: { dj: false, staff: false },
+    },
+  ]);
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
+
   const queue = useQuery({ queryKey: ["queue"], queryFn: voxariaApi.getQueue, refetchInterval: 10000 });
   const history = useQuery({ queryKey: ["history"], queryFn: async () => voxariaApi.getHistory().catch(() => mockData.history), refetchInterval: 14000 });
   const status = useQuery({ queryKey: ["status"], queryFn: async () => voxariaApi.getStatus().catch(() => mockData.status), refetchInterval: 10000 });
@@ -422,6 +444,12 @@ const Index = () => {
   const playerUnavailable = player.isError;
   const queueUnavailable = queue.isError;
   const lyricsServiceUnavailable = lyricsMutation.isError;
+  const canManageQueue = Boolean(currentUser?.permissions.dj || currentUser?.permissions.staff);
+  const canViewStaffTab = (currentUser?.roleLevel ?? 0) >= 2;
+  const manageableUsers = useMemo(
+    () => sessionUsers.filter((user) => user.id !== currentUser?.id),
+    [sessionUsers, currentUser?.id],
+  );
 
   const saveCurrentQueueAsPreset = (name: string) => {
     const label = name.trim();
@@ -442,6 +470,22 @@ const Index = () => {
     },
     [dragIndex, reorderQueueMutation],
   );
+
+  const toggleUserPermission = (userId: string, permission: "dj" | "staff") => {
+    setSessionUsers((prev) =>
+      prev.map((user) =>
+        user.id === userId
+          ? {
+              ...user,
+              permissions: {
+                ...user.permissions,
+                [permission]: !user.permissions[permission],
+              },
+            }
+          : user,
+      ),
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
