@@ -502,6 +502,90 @@ const Index = () => {
     toast({ title: "Logged out", description: "Role-gated controls are now hidden." });
   };
 
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-background p-4 text-foreground">
+        <div className="mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col gap-4">
+          <div className="flex items-center justify-end">
+            <Button className="neon-glow" onClick={loginWithDiscord}>
+              Login with Discord
+            </Button>
+          </div>
+
+          <article className="relative flex min-h-[520px] flex-1 flex-col rounded-md border border-primary/35 bg-panel-soft/75 p-5 shadow-soft neon-edge">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-xl font-bold text-primary">Expanded Visualizer</h2>
+                <p className="text-sm text-muted-foreground">
+                  {playerUnavailable
+                    ? "Service Unavailable"
+                    : `${player.data?.title ?? "No track playing"} — ${player.data?.artist ?? "Unknown artist"}`}
+                </p>
+              </div>
+
+              <Button
+                variant="outline"
+                className="border-primary/55 text-primary hover:bg-accent/40"
+                onClick={() => lyricsMutation.mutate({ title: currentTrack.title, artist: currentTrack.artist })}
+                disabled={lyricsMutation.isPending || (!currentTrack.title && !currentTrack.artist)}
+              >
+                Refresh Lyrics
+              </Button>
+            </div>
+
+            <div className="mb-3 rounded-md border border-primary/45 bg-panel/65 px-3 py-2">
+              <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+                <span>Manual Offset</span>
+                <span className="font-semibold text-primary neon-text">{(manualOffsetMs / 1000).toFixed(1)}s</span>
+              </div>
+              <Slider
+                value={[manualOffsetMs]}
+                min={-5000}
+                max={15000}
+                step={100}
+                onValueChange={([v]) => setManualOffsetMs(v)}
+                className="neon-glow"
+              />
+            </div>
+
+            <div className="mb-3 rounded-md border border-primary/45 bg-accent/25 px-3 py-2 text-sm text-primary neon-glow">
+              {lyricsServiceUnavailable
+                ? "Service Unavailable"
+                : lyricsUnavailable
+                  ? "Lyrics not available"
+                  : `Source: ${lyricsData?.source || "Unknown"}`}
+            </div>
+
+            <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
+              <div className="space-y-2">
+                {normalizedLyrics.length ? (
+                  normalizedLyrics.map((line, idx) => (
+                    <button
+                      key={`${line.text}-${idx}`}
+                      data-lyric-index={idx}
+                      onClick={() => setActiveLine(idx)}
+                      className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
+                        idx === activeLine
+                          ? "border-primary bg-accent/35 text-primary neon-glow neon-text"
+                          : "border-transparent text-foreground/85 hover:bg-muted/50 hover:text-foreground"
+                      }`}
+                    >
+                      {line.text}
+                    </button>
+                  ))
+                ) : (
+                  <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
+                    {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
+                  </p>
+                )}
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="relative min-h-screen lg:pl-[240px]">
