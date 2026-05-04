@@ -464,11 +464,12 @@ const Index = () => {
 
   const handleDrop = useCallback(
     (newIndex: number) => {
+      if (!canManageQueue) return;
       if (dragIndex === null || dragIndex === newIndex) return;
       reorderQueueMutation.mutate({ oldIndex: dragIndex, newIndex });
       setDragIndex(null);
     },
-    [dragIndex, reorderQueueMutation],
+    [canManageQueue, dragIndex, reorderQueueMutation],
   );
 
   const toggleUserPermission = (userId: string, permission: "dj" | "staff") => {
