@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  GripVertical,
   Disc3,
   History,
   ListMusic,
@@ -18,6 +19,7 @@ import {
   Trash2,
   UserCircle2,
   Volume2,
+  X,
   Youtube,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -36,10 +38,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
-import { mockData, voxariaApi, type ApiLyrics, type ApiTrack } from "@/lib/voxaria-api";
+import { mockData, voxariaApi, type ApiLyrics, type ApiPreset, type ApiTrack } from "@/lib/voxaria-api";
 
 type NavItem = { label: string; icon: typeof Disc3 };
-type SessionPreset = { id: string; name: string; tracks: number };
+type LyricLine = { text: string; timeMs: number | null };
+
+const LYRIC_OFFSET_DEFAULT_MS = 3000;
+const LYRIC_HOLD_WINDOW_MS = 3000;
 
 const navItems: NavItem[] = [
   { label: "Visualizer", icon: Disc3 },
@@ -55,11 +60,55 @@ const formatSec = (s: number) => {
   return `${m}:${sec}`;
 };
 
-const queueRow = (track: ApiTrack) => (
+const formatTrackDuration = (duration: ApiTrack["duration"]) => {
+  if (typeof duration === "number") return formatSec(duration);
+  return duration;
+};
+
+const parseLyricLine = (line: ApiLyrics["lines"][number]): LyricLine => {
+  if (typeof line === "string") {
+    const match = line.match(/^\s*\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]\s*(.*)$/);
+    if (!match) return { text: line.trim(), timeMs: null };
+
+    const min = Number(match[1]);
+    const sec = Number(match[2]);
+    const msRaw = match[3] ?? "0";
+    const ms = Number(msRaw.padEnd(3, "0"));
+    const text = (match[4] ?? "").trim();
+    return { text, timeMs: min * 60000 + sec * 1000 + ms };
+  }
+
+  const text = line.text?.trim() ?? "";
+  const timeMs = line.timeMs ?? line.timestamp ?? null;
+  return { text, timeMs };
+};
+
+const queueRow = (
+  track: ApiTrack,
+  index: number,
+  onDelete: (index: number) => void,
+  onDragStart: (index: number) => void,
+  onDrop: (newIndex: number) => void,
+  isDragging: boolean,
+) => (
   <article
     key={track.id}
-    className="grid grid-cols-[38px_1fr_52px_28px] items-center gap-2 rounded-md border border-border/70 bg-panel/80 p-2 transition hover:border-primary/55 hover:neon-glow"
+    draggable
+    onDragStart={() => onDragStart(index)}
+    onDragOver={(e) => e.preventDefault()}
+    onDrop={() => onDrop(index)}
+    className={`grid grid-cols-[20px_38px_1fr_52px_28px_28px] items-center gap-2 rounded-md border border-border/70 bg-panel/80 p-2 transition hover:border-primary/55 hover:neon-glow ${
+      isDragging ? "opacity-55" : ""
+    }`}
   >
+    <button
+      type="button"
+      className="flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent/35 hover:text-primary"
+      aria-label="Drag queue item"
+    >
+      <GripVertical className="h-3.5 w-3.5" />
+    </button>
+
     {track.art ? (
       <img src={track.art} alt={`${track.title} cover`} loading="lazy" className="h-9 w-9 rounded object-cover" />
     ) : (
@@ -73,7 +122,7 @@ const queueRow = (track: ApiTrack) => (
       <p className="truncate text-[11px] text-muted-foreground">{track.artist}</p>
     </div>
 
-    <p className="text-[10px] text-muted-foreground">{track.duration}</p>
+    <p className="text-[10px] text-muted-foreground">{formatTrackDuration(track.duration)}</p>
 
     {track.requesterAvatar ? (
       <img src={track.requesterAvatar} alt={`${track.requestedBy} avatar`} loading="lazy" className="h-7 w-7 rounded-full border border-border object-cover" />
@@ -82,6 +131,16 @@ const queueRow = (track: ApiTrack) => (
         <UserCircle2 className="h-3.5 w-3.5 text-muted-foreground" />
       </div>
     )}
+
+    <Button
+      type="button"
+      size="icon"
+      variant="ghost"
+      className="h-7 w-7 text-muted-foreground hover:bg-accent/35 hover:text-primary"
+      onClick={() => onDelete(index)}
+    >
+      <X className="h-3.5 w-3.5" />
+    </Button>
   </article>
 );
 
@@ -94,9 +153,16 @@ const Index = () => {
   const [activeLine, setActiveLine] = useState(0);
   const [lyricsUnavailable, setLyricsUnavailable] = useState(false);
   const [uiVolume, setUiVolume] = useState(100);
-  const [savedPlaylists, setSavedPlaylists] = useState<SessionPreset[]>([]);
+  const [manualOffsetMs, setManualOffsetMs] = useState(LYRIC_OFFSET_DEFAULT_MS);
   const [savePresetOpen, setSavePresetOpen] = useState(false);
   const [presetName, setPresetName] = useState("");
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  const animationFrameRef = useRef<number | null>(null);
+  const lyricsContainerRef = useRef<HTMLDivElement | null>(null);
+  const activeLineRef = useRef(0);
+  const currentPositionRef = useRef<HTMLSpanElement | null>(null);
+  const totalDurationRef = useRef<HTMLSpanElement | null>(null);
 
   const queue = useQuery({ queryKey: ["queue"], queryFn: voxariaApi.getQueue, refetchInterval: 10000 });
   const history = useQuery({ queryKey: ["history"], queryFn: async () => voxariaApi.getHistory().catch(() => mockData.history), refetchInterval: 14000 });
@@ -104,6 +170,7 @@ const Index = () => {
   const cache = useQuery({ queryKey: ["cache"], queryFn: async () => voxariaApi.getCache().catch(() => mockData.cache), refetchInterval: 15000 });
   const settings = useQuery({ queryKey: ["settings"], queryFn: async () => voxariaApi.getSettings().catch(() => mockData.settings) });
   const player = useQuery({ queryKey: ["player"], queryFn: voxariaApi.getPlayer, refetchInterval: 5000 });
+  const presets = useQuery({ queryKey: ["presets"], queryFn: voxariaApi.getPresets, refetchInterval: 30000 });
 
   const refreshAll = () => {
     void queryClient.invalidateQueries({ queryKey: ["queue"] });
@@ -136,6 +203,12 @@ const Index = () => {
     mutationFn: voxariaApi.playback,
     onSuccess: refreshAll,
     onError: () => toast({ title: "Control failed", description: "Playback action could not be completed.", variant: "destructive" }),
+  });
+
+  const previousTrackMutation = useMutation({
+    mutationFn: voxariaApi.previousTrack,
+    onSuccess: refreshAll,
+    onError: () => toast({ title: "Control failed", description: "Could not jump to previous track.", variant: "destructive" }),
   });
 
   const clearQueueMutation = useMutation({
@@ -175,6 +248,39 @@ const Index = () => {
 
   const volumeMutation = useMutation({ mutationFn: voxariaApi.setVolume, onSuccess: refreshAll });
 
+  const reorderQueueMutation = useMutation({
+    mutationFn: ({ oldIndex, newIndex }: { oldIndex: number; newIndex: number }) => voxariaApi.reorderQueue(oldIndex, newIndex),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["queue"] }),
+    onError: () => toast({ title: "Reorder failed", description: "Could not reorder queue item.", variant: "destructive" }),
+  });
+
+  const deleteQueueItemMutation = useMutation({
+    mutationFn: (index: number) => voxariaApi.deleteQueueItem(index),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["queue"] }),
+    onError: () => toast({ title: "Delete failed", description: "Could not remove queue item.", variant: "destructive" }),
+  });
+
+  const savePresetMutation = useMutation({
+    mutationFn: (name: string) => voxariaApi.savePreset(name),
+    onSuccess: () => {
+      toast({ title: "Preset saved" });
+      setPresetName("");
+      setSavePresetOpen(false);
+      void queryClient.invalidateQueries({ queryKey: ["presets"] });
+    },
+    onError: () => toast({ title: "Save failed", description: "Could not save preset.", variant: "destructive" }),
+  });
+
+  const loadPresetMutation = useMutation({
+    mutationFn: (name: string) => voxariaApi.loadPreset(name),
+    onSuccess: () => {
+      toast({ title: "Preset loaded" });
+      void queryClient.invalidateQueries({ queryKey: ["queue"] });
+      void queryClient.invalidateQueries({ queryKey: ["player"] });
+    },
+    onError: () => toast({ title: "Load failed", description: "Could not load preset.", variant: "destructive" }),
+  });
+
   const lyricsMutation = useMutation({
     mutationFn: async ({ title, artist }: { title: string; artist: string }) => voxariaApi.getLyrics(title, artist),
     onSuccess: (data) => {
@@ -207,6 +313,7 @@ const Index = () => {
   );
 
   const currentTrackKey = `${currentTrack.title}::${currentTrack.artist}`;
+  const normalizedLyrics = useMemo(() => (lyricsData?.lines ?? []).map(parseLyricLine).filter((line) => line.text.length > 0), [lyricsData?.lines]);
 
   useEffect(() => {
     if (!currentTrack.title && !currentTrack.artist) {
@@ -220,12 +327,60 @@ const Index = () => {
   }, [currentTrackKey]);
 
   useEffect(() => {
-    if (!player.data?.playing || !lyricsData?.lines.length) return;
-    const interval = setInterval(() => {
-      setActiveLine((prev) => (prev + 1) % lyricsData.lines.length);
-    }, 3800);
-    return () => clearInterval(interval);
-  }, [player.data?.playing, lyricsData?.lines]);
+    activeLineRef.current = activeLine;
+  }, [activeLine]);
+
+  useEffect(() => {
+    if (!player.data) return;
+    if (!normalizedLyrics.length) {
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      return;
+    }
+
+    const fallbackStart = Date.now() - Math.max(0, player.data.positionSec ?? 0) * 1000;
+    const startTime = player.data.startTime ?? fallbackStart;
+
+    const frame = () => {
+      const now = Date.now();
+      const paused = Boolean(player.data.isPaused);
+      const rawMs = paused
+        ? Math.max(0, (player.data.lastPausedAt ?? now) - startTime)
+        : Math.max(0, now - startTime);
+
+      const adjustedMs = Math.max(0, rawMs - manualOffsetMs);
+
+      if (currentPositionRef.current) {
+        currentPositionRef.current.textContent = formatSec(adjustedMs / 1000);
+      }
+
+      if (totalDurationRef.current) {
+        totalDurationRef.current.textContent = formatSec(player.data.durationSec ?? 0);
+      }
+
+      const fallbackIndex = Math.min(normalizedLyrics.length - 1, Math.floor(adjustedMs / LYRIC_HOLD_WINDOW_MS));
+      const nextIndex = normalizedLyrics.findIndex((line, idx) => {
+        const start = line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS;
+        const nextStart = normalizedLyrics[idx + 1]?.timeMs ?? Number.POSITIVE_INFINITY;
+        const end = Math.min(start + LYRIC_HOLD_WINDOW_MS, nextStart);
+        return adjustedMs >= start && adjustedMs < end;
+      });
+
+      const resolved = nextIndex >= 0 ? nextIndex : fallbackIndex;
+      if (resolved !== activeLineRef.current) {
+        activeLineRef.current = resolved;
+        setActiveLine(resolved);
+        const target = lyricsContainerRef.current?.querySelector<HTMLElement>(`[data-lyric-index='${resolved}']`);
+        target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+
+      animationFrameRef.current = requestAnimationFrame(frame);
+    };
+
+    animationFrameRef.current = requestAnimationFrame(frame);
+    return () => {
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    };
+  }, [player.data?.startTime, player.data?.positionSec, player.data?.durationSec, player.data?.isPaused, player.data?.lastPausedAt, manualOffsetMs, normalizedLyrics]);
 
   useEffect(() => {
     if (typeof player.data?.volume === "number") {
@@ -240,8 +395,8 @@ const Index = () => {
 
   const playerProgress = useMemo(() => {
     if (!player.data || !player.data.durationSec) return 0;
-    return Math.min(100, Math.round((player.data.positionSec / player.data.durationSec) * 100));
-  }, [player.data]);
+    return Math.min(100, Math.round((Math.max(player.data.positionSec, 0) / player.data.durationSec) * 100));
+  }, [player.data?.positionSec, player.data?.durationSec]);
 
   const displayVolume = useMemo(() => Math.min(200, Math.max(0, Math.round(uiVolume))), [uiVolume]);
   const boostActive = displayVolume > 100;
@@ -257,17 +412,19 @@ const Index = () => {
       toast({ title: "Name required", description: "Enter a playlist name before saving.", variant: "destructive" });
       return;
     }
-
-    const tracks = (queue.data ?? []).length;
-    setSavedPlaylists((prev) => [{ id: crypto.randomUUID(), name: label, tracks }, ...prev].slice(0, 6));
-    toast({ title: "Preset saved", description: `Saved ${tracks} tracks to ${label}.` });
-    setPresetName("");
-    setSavePresetOpen(false);
+    savePresetMutation.mutate(label);
   };
 
-  const loadPreset = (preset: SessionPreset) => {
-    toast({ title: "Preset loaded", description: `${preset.name} queued (${preset.tracks} tracks).` });
-  };
+  const loadPreset = (preset: ApiPreset) => loadPresetMutation.mutate(preset.name);
+
+  const handleDrop = useCallback(
+    (newIndex: number) => {
+      if (dragIndex === null || dragIndex === newIndex) return;
+      reorderQueueMutation.mutate({ oldIndex: dragIndex, newIndex });
+      setDragIndex(null);
+    },
+    [dragIndex, reorderQueueMutation],
+  );
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -345,7 +502,7 @@ const Index = () => {
                     </p>
                   </div>
 
-                  <Button
+                    <Button
                     variant="outline"
                     className="border-primary/55 text-primary hover:bg-accent/40"
                     onClick={() => lyricsMutation.mutate({ title: currentTrack.title, artist: currentTrack.artist })}
@@ -355,6 +512,21 @@ const Index = () => {
                   </Button>
                 </div>
 
+                  <div className="mb-3 rounded-md border border-primary/45 bg-panel/65 px-3 py-2">
+                    <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Manual Offset</span>
+                      <span className="font-semibold text-primary neon-text">{(manualOffsetMs / 1000).toFixed(1)}s</span>
+                    </div>
+                    <Slider
+                      value={[manualOffsetMs]}
+                      min={-5000}
+                      max={15000}
+                      step={100}
+                      onValueChange={([v]) => setManualOffsetMs(v)}
+                      className="neon-glow"
+                    />
+                  </div>
+
                 <div className="mb-3 rounded-md border border-primary/45 bg-accent/25 px-3 py-2 text-sm text-primary neon-glow">
                   {lyricsServiceUnavailable
                     ? "Service Unavailable"
@@ -363,20 +535,21 @@ const Index = () => {
                       : `Source: ${lyricsData?.source || "Unknown"}`}
                 </div>
 
-                <div className="h-full overflow-y-auto pr-2">
+                <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
                   <div className="space-y-2">
-                    {lyricsData?.lines?.length ? (
-                      lyricsData.lines.map((line, idx) => (
+                    {normalizedLyrics.length ? (
+                      normalizedLyrics.map((line, idx) => (
                       <button
-                        key={`${line}-${idx}`}
+                        key={`${line.text}-${idx}`}
+                        data-lyric-index={idx}
                         onClick={() => setActiveLine(idx)}
-                        className={`block w-full rounded-sm px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
+                        className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
                           idx === activeLine
-                            ? "bg-accent/35 text-primary neon-glow"
-                            : "text-foreground/85 hover:bg-muted/50 hover:text-foreground"
+                            ? "border-primary bg-accent/35 text-primary neon-glow neon-text"
+                            : "border-transparent text-foreground/85 hover:bg-muted/50 hover:text-foreground"
                         }`}
                       >
-                        {line}
+                        {line.text}
                       </button>
                       ))
                     ) : (
@@ -421,7 +594,16 @@ const Index = () => {
                     {queueUnavailable ? (
                       <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">Service Unavailable</p>
                     ) : (
-                      (queue.data ?? []).map((track) => queueRow(track))
+                      (queue.data ?? []).map((track, index) =>
+                        queueRow(
+                          track,
+                          index,
+                          (idx) => deleteQueueItemMutation.mutate(idx),
+                          (idx) => setDragIndex(idx),
+                          handleDrop,
+                          dragIndex === index,
+                        ),
+                      )
                     )}
                   </div>
                 </section>
@@ -502,17 +684,17 @@ const Index = () => {
                   className="h-8 border-primary/55 text-primary hover:bg-accent/35"
                   onClick={() => setSavePresetOpen(true)}
                 >
-                  <Plus className="mr-1 h-3.5 w-3.5" /> Save Current Queue as Preset
+                  <Plus className="mr-1 h-3.5 w-3.5" /> Save Current Queue
                 </Button>
               </div>
 
               <div className="space-y-2">
-                {savedPlaylists.length ? (
-                  savedPlaylists.map((preset) => (
-                    <div key={preset.id} className="flex items-center justify-between rounded-md border border-border/70 bg-panel/80 p-2">
+                {(presets.data ?? []).length ? (
+                  (presets.data ?? []).map((preset, idx) => (
+                    <div key={`${preset.name}-${idx}`} className="flex items-center justify-between rounded-md border border-border/70 bg-panel/80 p-2">
                       <div className="min-w-0">
                         <p className="truncate text-xs font-semibold text-foreground">{preset.name}</p>
-                        <p className="text-[11px] text-muted-foreground">{preset.tracks} tracks</p>
+                        <p className="text-[11px] text-muted-foreground">{preset.tracks ?? 0} tracks</p>
                       </div>
                       <Button size="sm" variant="outline" className="h-7 border-primary/55 text-primary hover:bg-accent/35" onClick={() => loadPreset(preset)}>
                         Load
@@ -532,7 +714,7 @@ const Index = () => {
         <DialogContent className="max-w-sm border-primary/35 bg-panel text-foreground">
           <DialogHeader>
             <DialogTitle className="text-primary">Save queue as preset</DialogTitle>
-            <DialogDescription>Name this playlist to save it for this session.</DialogDescription>
+            <DialogDescription>Name this playlist to save it as a preset.</DialogDescription>
           </DialogHeader>
 
           <Input
@@ -547,7 +729,7 @@ const Index = () => {
             <Button variant="outline" className="border-primary/45 text-primary hover:bg-accent/35" onClick={() => setSavePresetOpen(false)}>
               Cancel
             </Button>
-            <Button className="neon-glow" onClick={() => saveCurrentQueueAsPreset(presetName)} disabled={!presetName.trim()}>
+            <Button className="neon-glow" onClick={() => saveCurrentQueueAsPreset(presetName)} disabled={!presetName.trim() || savePresetMutation.isPending}>
               Save Playlist
             </Button>
           </DialogFooter>
@@ -572,7 +754,7 @@ const Index = () => {
 
           <div>
             <div className="mb-2 flex items-center justify-center gap-2">
-              <Button size="icon" variant="secondary" className="border border-primary/35 text-primary hover:bg-accent/35" onClick={() => playbackMutation.mutate("previous")}>
+              <Button size="icon" variant="secondary" className="border border-primary/35 text-primary hover:bg-accent/35" onClick={() => previousTrackMutation.mutate()}>
                 <SkipBack className="h-4 w-4" />
               </Button>
               <Button size="icon" className="h-12 w-12 rounded-full neon-glow" onClick={() => playbackMutation.mutate("play_pause")}>
@@ -587,8 +769,8 @@ const Index = () => {
             </div>
             <Progress value={playerProgress} className="h-1.5" />
             <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
-              <span>{formatSec(player.data?.positionSec ?? 65)}</span>
-              <span>{formatSec(player.data?.durationSec ?? 252)}</span>
+              <span ref={currentPositionRef}>{formatSec(player.data?.positionSec ?? 0)}</span>
+              <span ref={totalDurationRef}>{formatSec(player.data?.durationSec ?? 0)}</span>
             </div>
           </div>
 
