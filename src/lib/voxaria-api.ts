@@ -2,7 +2,7 @@ export type ApiTrack = {
   id: string;
   title: string;
   artist: string;
-  duration: string;
+  duration: string | number;
   requestedBy: string;
   requesterAvatar?: string;
   art?: string;
