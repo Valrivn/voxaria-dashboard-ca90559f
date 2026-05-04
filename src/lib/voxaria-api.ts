@@ -25,20 +25,29 @@ export type ApiSettings = {
 };
 
 export type ApiPlayer = {
-  title: string;
-  artist: string;
+  title: string | null;
+  artist: string | null;
   durationSec: number;
   positionSec: number;
+  startTime?: number | null;
+  lastPausedAt?: number | null;
+  isPaused?: boolean;
   playing: boolean;
   art?: string;
   volume: number;
+};
+
+export type ApiPreset = {
+  id?: string;
+  name: string;
+  tracks?: number;
 };
 
 export type ApiLyrics = {
   title: string;
   artist: string;
   source: string;
-  lines: string[];
+  lines: Array<string | { text: string; timeMs?: number; timestamp?: number }>;
 };
 
 type PlaybackAction = "previous" | "play_pause" | "next" | "stop";
@@ -60,6 +69,12 @@ const ENDPOINTS = {
   sessionRestore: "/system/settings/session-restore",
   volume: "/music/volume",
   lyrics: "/music/lyrics",
+  queueReorder: "/queue/reorder",
+  queueDelete: "/queue",
+  previousTrack: "/player/previous",
+  presets: "/presets",
+  presetsSave: "/presets/save",
+  presetsLoad: "/presets/load",
 } as const;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -122,6 +137,16 @@ export const voxariaApi = {
       method: "POST",
       body: JSON.stringify({ title: cleanLyricsTitle(title), artist }),
     }),
+  reorderQueue: (oldIndex: number, newIndex: number) =>
+    request<{ ok: boolean }>(ENDPOINTS.queueReorder, {
+      method: "POST",
+      body: JSON.stringify({ oldIndex, newIndex }),
+    }),
+  deleteQueueItem: (index: number) => request<{ ok: boolean }>(`${ENDPOINTS.queueDelete}/${index}`, { method: "DELETE" }),
+  previousTrack: () => request<{ ok: boolean }>(ENDPOINTS.previousTrack, { method: "POST" }),
+  getPresets: () => request<ApiPreset[]>(ENDPOINTS.presets),
+  savePreset: (name: string) => request<{ ok: boolean; preset?: ApiPreset }>(ENDPOINTS.presetsSave, { method: "POST", body: JSON.stringify({ name }) }),
+  loadPreset: (name: string) => request<{ ok: boolean }>(ENDPOINTS.presetsLoad, { method: "POST", body: JSON.stringify({ name }) }),
 };
 
 export const mockData = {
