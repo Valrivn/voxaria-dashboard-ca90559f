@@ -29,6 +29,7 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -42,6 +43,15 @@ import { mockData, voxariaApi, type ApiLyrics, type ApiPreset, type ApiTrack } f
 
 type NavItem = { label: string; icon: typeof Disc3 };
 type LyricLine = { text: string; timeMs: number | null };
+type SessionUser = {
+  id: string;
+  name: string;
+  roleLevel: number;
+  permissions: {
+    dj: boolean;
+    staff: boolean;
+  };
+};
 
 const LYRIC_OFFSET_DEFAULT_MS = 3000;
 const LYRIC_HOLD_WINDOW_MS = 3000;
@@ -90,24 +100,29 @@ const queueRow = (
   onDragStart: (index: number) => void,
   onDrop: (newIndex: number) => void,
   isDragging: boolean,
+  canManageQueue: boolean,
 ) => (
   <article
     key={track.id}
-    draggable
-    onDragStart={() => onDragStart(index)}
+    draggable={canManageQueue}
+    onDragStart={() => canManageQueue && onDragStart(index)}
     onDragOver={(e) => e.preventDefault()}
-    onDrop={() => onDrop(index)}
-    className={`grid grid-cols-[20px_38px_1fr_52px_28px_28px] items-center gap-2 rounded-md border border-border/70 bg-panel/80 p-2 transition hover:border-primary/55 hover:neon-glow ${
+    onDrop={() => canManageQueue && onDrop(index)}
+    className={`grid items-center gap-2 rounded-md border border-border/70 bg-panel/80 p-2 transition hover:border-primary/55 hover:neon-glow ${
+      canManageQueue ? "grid-cols-[20px_38px_1fr_52px_28px_28px]" : "grid-cols-[38px_1fr_52px_28px]"
+    } ${
       isDragging ? "opacity-55" : ""
     }`}
   >
-    <button
-      type="button"
-      className="flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent/35 hover:text-primary"
-      aria-label="Drag queue item"
-    >
-      <GripVertical className="h-3.5 w-3.5" />
-    </button>
+    {canManageQueue && (
+      <button
+        type="button"
+        className="flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent/35 hover:text-primary"
+        aria-label="Drag queue item"
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </button>
+    )}
 
     {track.art ? (
       <img src={track.art} alt={`${track.title} cover`} loading="lazy" className="h-9 w-9 rounded object-cover" />
@@ -132,15 +147,17 @@ const queueRow = (
       </div>
     )}
 
-    <Button
-      type="button"
-      size="icon"
-      variant="ghost"
-      className="h-7 w-7 text-muted-foreground hover:bg-accent/35 hover:text-primary"
-      onClick={() => onDelete(index)}
-    >
-      <X className="h-3.5 w-3.5" />
-    </Button>
+    {canManageQueue && (
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-7 w-7 text-muted-foreground hover:bg-accent/35 hover:text-primary"
+        onClick={() => onDelete(index)}
+      >
+        <X className="h-3.5 w-3.5" />
+      </Button>
+    )}
   </article>
 );
 
