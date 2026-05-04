@@ -487,6 +487,20 @@ const Index = () => {
     );
   };
 
+  const loginWithDiscord = () => {
+    const nextUser = sessionUsers[0] ?? null;
+    setCurrentUser(nextUser);
+    toast({
+      title: nextUser ? "Connected" : "No session users",
+      description: nextUser ? `Logged in as ${nextUser.name}.` : "No users are available in this session.",
+    });
+  };
+
+  const logoutDiscord = () => {
+    setCurrentUser(null);
+    toast({ title: "Logged out", description: "Role-gated controls are now hidden." });
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="relative min-h-screen lg:pl-[240px]">
@@ -663,6 +677,7 @@ const Index = () => {
                           (idx) => setDragIndex(idx),
                           handleDrop,
                           dragIndex === index,
+                          canManageQueue,
                         ),
                       )
                     )}
@@ -733,7 +748,7 @@ const Index = () => {
               <h3 className="mb-2 text-sm font-semibold">Recent History</h3>
               <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 132 }}>
                 {(history.data ?? []).slice(0, 3).map((track, index) =>
-                  queueRow(track, index, () => undefined, () => undefined, () => undefined, false),
+                  queueRow(track, index, () => undefined, () => undefined, () => undefined, false, false),
                 )}
               </div>
             </article>
