@@ -29,6 +29,7 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -42,6 +43,15 @@ import { mockData, voxariaApi, type ApiLyrics, type ApiPreset, type ApiTrack } f
 
 type NavItem = { label: string; icon: typeof Disc3 };
 type LyricLine = { text: string; timeMs: number | null };
+type SessionUser = {
+  id: string;
+  name: string;
+  roleLevel: number;
+  permissions: {
+    dj: boolean;
+    staff: boolean;
+  };
+};
 
 const LYRIC_OFFSET_DEFAULT_MS = 3000;
 const LYRIC_HOLD_WINDOW_MS = 3000;
@@ -90,24 +100,29 @@ const queueRow = (
   onDragStart: (index: number) => void,
   onDrop: (newIndex: number) => void,
   isDragging: boolean,
+  canManageQueue: boolean,
 ) => (
   <article
     key={track.id}
-    draggable
-    onDragStart={() => onDragStart(index)}
+    draggable={canManageQueue}
+    onDragStart={() => canManageQueue && onDragStart(index)}
     onDragOver={(e) => e.preventDefault()}
-    onDrop={() => onDrop(index)}
-    className={`grid grid-cols-[20px_38px_1fr_52px_28px_28px] items-center gap-2 rounded-md border border-border/70 bg-panel/80 p-2 transition hover:border-primary/55 hover:neon-glow ${
+    onDrop={() => canManageQueue && onDrop(index)}
+    className={`grid items-center gap-2 rounded-md border border-border/70 bg-panel/80 p-2 transition hover:border-primary/55 hover:neon-glow ${
+      canManageQueue ? "grid-cols-[20px_38px_1fr_52px_28px_28px]" : "grid-cols-[38px_1fr_52px_28px]"
+    } ${
       isDragging ? "opacity-55" : ""
     }`}
   >
-    <button
-      type="button"
-      className="flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent/35 hover:text-primary"
-      aria-label="Drag queue item"
-    >
-      <GripVertical className="h-3.5 w-3.5" />
-    </button>
+    {canManageQueue && (
+      <button
+        type="button"
+        className="flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent/35 hover:text-primary"
+        aria-label="Drag queue item"
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </button>
+    )}
 
     {track.art ? (
       <img src={track.art} alt={`${track.title} cover`} loading="lazy" className="h-9 w-9 rounded object-cover" />
@@ -132,15 +147,17 @@ const queueRow = (
       </div>
     )}
 
-    <Button
-      type="button"
-      size="icon"
-      variant="ghost"
-      className="h-7 w-7 text-muted-foreground hover:bg-accent/35 hover:text-primary"
-      onClick={() => onDelete(index)}
-    >
-      <X className="h-3.5 w-3.5" />
-    </Button>
+    {canManageQueue && (
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-7 w-7 text-muted-foreground hover:bg-accent/35 hover:text-primary"
+        onClick={() => onDelete(index)}
+      >
+        <X className="h-3.5 w-3.5" />
+      </Button>
+    )}
   </article>
 );
 
@@ -163,6 +180,28 @@ const Index = () => {
   const activeLineRef = useRef(0);
   const currentPositionRef = useRef<HTMLSpanElement | null>(null);
   const totalDurationRef = useRef<HTMLSpanElement | null>(null);
+
+  const [sessionUsers, setSessionUsers] = useState<SessionUser[]>([
+    {
+      id: "u1",
+      name: "Astra",
+      roleLevel: 2,
+      permissions: { dj: true, staff: true },
+    },
+    {
+      id: "u2",
+      name: "Kai",
+      roleLevel: 1,
+      permissions: { dj: true, staff: false },
+    },
+    {
+      id: "u3",
+      name: "Nyx",
+      roleLevel: 0,
+      permissions: { dj: false, staff: false },
+    },
+  ]);
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
 
   const queue = useQuery({ queryKey: ["queue"], queryFn: voxariaApi.getQueue, refetchInterval: 10000 });
   const history = useQuery({ queryKey: ["history"], queryFn: async () => voxariaApi.getHistory().catch(() => mockData.history), refetchInterval: 14000 });
@@ -405,6 +444,12 @@ const Index = () => {
   const playerUnavailable = player.isError;
   const queueUnavailable = queue.isError;
   const lyricsServiceUnavailable = lyricsMutation.isError;
+  const canManageQueue = Boolean(currentUser?.permissions.dj || currentUser?.permissions.staff);
+  const canViewStaffTab = (currentUser?.roleLevel ?? 0) >= 2;
+  const manageableUsers = useMemo(
+    () => sessionUsers.filter((user) => user.id !== currentUser?.id),
+    [sessionUsers, currentUser?.id],
+  );
 
   const saveCurrentQueueAsPreset = (name: string) => {
     const label = name.trim();
@@ -419,12 +464,127 @@ const Index = () => {
 
   const handleDrop = useCallback(
     (newIndex: number) => {
+      if (!canManageQueue) return;
       if (dragIndex === null || dragIndex === newIndex) return;
       reorderQueueMutation.mutate({ oldIndex: dragIndex, newIndex });
       setDragIndex(null);
     },
-    [dragIndex, reorderQueueMutation],
+    [canManageQueue, dragIndex, reorderQueueMutation],
   );
+
+  const toggleUserPermission = (userId: string, permission: "dj" | "staff") => {
+    setSessionUsers((prev) =>
+      prev.map((user) =>
+        user.id === userId
+          ? {
+              ...user,
+              permissions: {
+                ...user.permissions,
+                [permission]: !user.permissions[permission],
+              },
+            }
+          : user,
+      ),
+    );
+  };
+
+  const loginWithDiscord = () => {
+    const nextUser = sessionUsers[0] ?? null;
+    setCurrentUser(nextUser);
+    toast({
+      title: nextUser ? "Connected" : "No session users",
+      description: nextUser ? `Logged in as ${nextUser.name}.` : "No users are available in this session.",
+    });
+  };
+
+  const logoutDiscord = () => {
+    setCurrentUser(null);
+    toast({ title: "Logged out", description: "Role-gated controls are now hidden." });
+  };
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-background p-4 text-foreground">
+        <div className="mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col gap-4">
+          <div className="flex items-center justify-end">
+            <Button className="neon-glow" onClick={loginWithDiscord}>
+              Login with Discord
+            </Button>
+          </div>
+
+          <article className="relative flex min-h-[520px] flex-1 flex-col rounded-md border border-primary/35 bg-panel-soft/75 p-5 shadow-soft neon-edge">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-xl font-bold text-primary">Expanded Visualizer</h2>
+                <p className="text-sm text-muted-foreground">
+                  {playerUnavailable
+                    ? "Service Unavailable"
+                    : `${player.data?.title ?? "No track playing"} — ${player.data?.artist ?? "Unknown artist"}`}
+                </p>
+              </div>
+
+              <Button
+                variant="outline"
+                className="border-primary/55 text-primary hover:bg-accent/40"
+                onClick={() => lyricsMutation.mutate({ title: currentTrack.title, artist: currentTrack.artist })}
+                disabled={lyricsMutation.isPending || (!currentTrack.title && !currentTrack.artist)}
+              >
+                Refresh Lyrics
+              </Button>
+            </div>
+
+            <div className="mb-3 rounded-md border border-primary/45 bg-panel/65 px-3 py-2">
+              <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+                <span>Manual Offset</span>
+                <span className="font-semibold text-primary neon-text">{(manualOffsetMs / 1000).toFixed(1)}s</span>
+              </div>
+              <Slider
+                value={[manualOffsetMs]}
+                min={-5000}
+                max={15000}
+                step={100}
+                onValueChange={([v]) => setManualOffsetMs(v)}
+                className="neon-glow"
+              />
+            </div>
+
+            <div className="mb-3 rounded-md border border-primary/45 bg-accent/25 px-3 py-2 text-sm text-primary neon-glow">
+              {lyricsServiceUnavailable
+                ? "Service Unavailable"
+                : lyricsUnavailable
+                  ? "Lyrics not available"
+                  : `Source: ${lyricsData?.source || "Unknown"}`}
+            </div>
+
+            <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
+              <div className="space-y-2">
+                {normalizedLyrics.length ? (
+                  normalizedLyrics.map((line, idx) => (
+                    <button
+                      key={`${line.text}-${idx}`}
+                      data-lyric-index={idx}
+                      onClick={() => setActiveLine(idx)}
+                      className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
+                        idx === activeLine
+                          ? "border-primary bg-accent/35 text-primary neon-glow neon-text"
+                          : "border-transparent text-foreground/85 hover:bg-muted/50 hover:text-foreground"
+                      }`}
+                    >
+                      {line.text}
+                    </button>
+                  ))
+                ) : (
+                  <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
+                    {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
+                  </p>
+                )}
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -485,6 +645,9 @@ const Index = () => {
                 onClick={() => summonBotMutation.mutate()}
               >
                 {summonBotMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Summon Bot"}
+              </Button>
+              <Button variant="outline" className="h-10 border-primary/55 text-primary hover:bg-accent/35" onClick={logoutDiscord}>
+                <LogOut className="h-4 w-4" />
               </Button>
             </div>
           </header>
@@ -602,6 +765,7 @@ const Index = () => {
                           (idx) => setDragIndex(idx),
                           handleDrop,
                           dragIndex === index,
+                          canManageQueue,
                         ),
                       )
                     )}
@@ -654,25 +818,70 @@ const Index = () => {
             </article>
 
             <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft">
-              <h3 className="mb-2 text-sm font-semibold">System Settings</h3>
-              <div className="flex items-center justify-between rounded-md border border-border/70 bg-panel p-3">
-                <div>
-                  <p className="text-sm font-medium">Enable Session Restore</p>
-                  <p className="text-xs text-muted-foreground">Restore queue/session after reconnect.</p>
-                </div>
-                <Switch
-                  checked={settings.data?.sessionRestoreEnabled ?? false}
-                  onCheckedChange={(value) => sessionRestoreMutation.mutate(value)}
-                  disabled={sessionRestoreMutation.isPending}
-                />
-              </div>
+              <Tabs defaultValue="system" className="space-y-3">
+                <TabsList className="h-9 w-full justify-start">
+                  <TabsTrigger value="system">System</TabsTrigger>
+                  {canViewStaffTab && <TabsTrigger value="staff">Staff</TabsTrigger>}
+                </TabsList>
+
+                <TabsContent value="system" className="mt-0">
+                  <h3 className="mb-2 text-sm font-semibold">System Settings</h3>
+                  <div className="flex items-center justify-between rounded-md border border-border/70 bg-panel p-3">
+                    <div>
+                      <p className="text-sm font-medium">Enable Session Restore</p>
+                      <p className="text-xs text-muted-foreground">Restore queue/session after reconnect.</p>
+                    </div>
+                    <Switch
+                      checked={settings.data?.sessionRestoreEnabled ?? false}
+                      onCheckedChange={(value) => sessionRestoreMutation.mutate(value)}
+                      disabled={sessionRestoreMutation.isPending}
+                    />
+                  </div>
+                </TabsContent>
+
+                {canViewStaffTab && (
+                  <TabsContent value="staff" className="mt-0 space-y-2">
+                    <h3 className="text-sm font-semibold">Session Permissions</h3>
+                    {manageableUsers.length ? (
+                      manageableUsers.map((user) => (
+                        <div key={user.id} className="rounded-md border border-border/70 bg-panel p-2.5">
+                          <div className="mb-2 flex items-center justify-between">
+                            <p className="text-sm font-medium text-foreground">{user.name}</p>
+                            <Badge variant="outline" className="border-primary/40 text-primary">Role {user.roleLevel}</Badge>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="flex items-center justify-between rounded-md border border-border/70 px-2 py-1.5">
+                              <span className="text-xs text-muted-foreground">DJ</span>
+                              <Switch
+                                checked={user.permissions.dj}
+                                onCheckedChange={() => toggleUserPermission(user.id, "dj")}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between rounded-md border border-border/70 px-2 py-1.5">
+                              <span className="text-xs text-muted-foreground">Staff</span>
+                              <Switch
+                                checked={user.permissions.staff}
+                                onCheckedChange={() => toggleUserPermission(user.id, "staff")}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">
+                        No other users in this session.
+                      </p>
+                    )}
+                  </TabsContent>
+                )}
+              </Tabs>
             </article>
 
             <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft">
               <h3 className="mb-2 text-sm font-semibold">Recent History</h3>
               <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 132 }}>
                 {(history.data ?? []).slice(0, 3).map((track, index) =>
-                  queueRow(track, index, () => undefined, () => undefined, () => undefined, false),
+                  queueRow(track, index, () => undefined, () => undefined, () => undefined, false, false),
                 )}
               </div>
             </article>
