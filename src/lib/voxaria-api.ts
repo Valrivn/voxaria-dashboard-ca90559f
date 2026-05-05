@@ -50,6 +50,25 @@ export type ApiLyrics = {
   lines: Array<string | { text: string; timeMs?: number; timestamp?: number }>;
 };
 
+export type ApiPitchFrame = {
+  timeMs: number;
+  midi: number;
+};
+
+export type ApiPitchMap = {
+  title: string;
+  artist: string;
+  frames: ApiPitchFrame[];
+};
+
+export type ApiSearchResult = {
+  id: string;
+  title: string;
+  artist: string;
+  duration?: number;
+  thumbnail?: string;
+};
+
 type PlaybackAction = "previous" | "play_pause" | "next" | "stop";
 
 const BASE_URL = "https://unhitched-shrink-dorsal.ngrok-free.dev";
@@ -72,9 +91,12 @@ const ENDPOINTS = {
   queueReorder: "/queue/reorder",
   queueDelete: "/queue",
   previousTrack: "/player/previous",
+  queueShuffle: "/queue/shuffle",
   presets: "/presets",
   presetsSave: "/presets/save",
   presetsLoad: "/presets/load",
+  pitchMap: "/music/pitch-map",
+  searchResults: "/music/search/results",
 } as const;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -144,9 +166,20 @@ export const voxariaApi = {
     }),
   deleteQueueItem: (index: number) => request<{ ok: boolean }>(`${ENDPOINTS.queueDelete}/${index}`, { method: "DELETE" }),
   previousTrack: () => request<{ ok: boolean }>(ENDPOINTS.previousTrack, { method: "POST" }),
+  shuffleQueue: () => request<{ ok: boolean }>(ENDPOINTS.queueShuffle, { method: "POST" }),
   getPresets: () => request<ApiPreset[]>(ENDPOINTS.presets),
   savePreset: (name: string) => request<{ ok: boolean; preset?: ApiPreset }>(ENDPOINTS.presetsSave, { method: "POST", body: JSON.stringify({ name }) }),
   loadPreset: (name: string) => request<{ ok: boolean }>(ENDPOINTS.presetsLoad, { method: "POST", body: JSON.stringify({ name }) }),
+  getPitchMap: (title: string, artist: string) =>
+    request<ApiPitchMap>(ENDPOINTS.pitchMap, {
+      method: "POST",
+      body: JSON.stringify({ title, artist }),
+    }),
+  searchCatalog: (query: string) =>
+    request<ApiSearchResult[]>(ENDPOINTS.searchResults, {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    }),
 };
 
 export const mockData = {
