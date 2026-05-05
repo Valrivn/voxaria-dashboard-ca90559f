@@ -55,6 +55,7 @@ type SessionUser = {
 
 const LYRIC_OFFSET_DEFAULT_MS = 3000;
 const LYRIC_HOLD_WINDOW_MS = 3000;
+const LYRIC_CALIBRATION_STORAGE_KEY = "voxaria.lyricCalibrationOffsetMs";
 
 const navItems: NavItem[] = [
   { label: "Visualizer", icon: Disc3 },
@@ -170,7 +171,13 @@ const Index = () => {
   const [activeLine, setActiveLine] = useState(0);
   const [lyricsUnavailable, setLyricsUnavailable] = useState(false);
   const [uiVolume, setUiVolume] = useState(100);
-  const [manualOffsetMs, setManualOffsetMs] = useState(LYRIC_OFFSET_DEFAULT_MS);
+  const [syncOffsetMs, setSyncOffsetMs] = useState(() => {
+    if (typeof window === "undefined") return LYRIC_OFFSET_DEFAULT_MS;
+    const stored = window.localStorage.getItem(LYRIC_CALIBRATION_STORAGE_KEY);
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isFinite(parsed) ? parsed : LYRIC_OFFSET_DEFAULT_MS;
+  });
+  const [rttCompensationMs, setRttCompensationMs] = useState(0);
   const [savePresetOpen, setSavePresetOpen] = useState(false);
   const [presetName, setPresetName] = useState("");
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -178,6 +185,7 @@ const Index = () => {
   const animationFrameRef = useRef<number | null>(null);
   const lyricsContainerRef = useRef<HTMLDivElement | null>(null);
   const activeLineRef = useRef(0);
+  const smoothTimeRef = useRef(0);
   const currentPositionRef = useRef<HTMLSpanElement | null>(null);
   const totalDurationRef = useRef<HTMLSpanElement | null>(null);
 
@@ -208,7 +216,17 @@ const Index = () => {
   const status = useQuery({ queryKey: ["status"], queryFn: async () => voxariaApi.getStatus().catch(() => mockData.status), refetchInterval: 10000 });
   const cache = useQuery({ queryKey: ["cache"], queryFn: async () => voxariaApi.getCache().catch(() => mockData.cache), refetchInterval: 15000 });
   const settings = useQuery({ queryKey: ["settings"], queryFn: async () => voxariaApi.getSettings().catch(() => mockData.settings) });
-  const player = useQuery({ queryKey: ["player"], queryFn: voxariaApi.getPlayer, refetchInterval: 5000 });
+  const player = useQuery({
+    queryKey: ["player"],
+    queryFn: async () => {
+      const startedAt = Date.now();
+      const data = await voxariaApi.getPlayer();
+      const elapsed = Math.max(0, Date.now() - startedAt);
+      setRttCompensationMs(elapsed / 2);
+      return data;
+    },
+    refetchInterval: 5000,
+  });
   const presets = useQuery({ queryKey: ["presets"], queryFn: voxariaApi.getPresets, refetchInterval: 30000 });
 
   const refreshAll = () => {
@@ -370,6 +388,11 @@ const Index = () => {
   }, [activeLine]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(LYRIC_CALIBRATION_STORAGE_KEY, `${Math.round(syncOffsetMs)}`);
+  }, [syncOffsetMs]);
+
+  useEffect(() => {
     if (!player.data) return;
     if (!normalizedLyrics.length) {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
@@ -386,7 +409,9 @@ const Index = () => {
         ? Math.max(0, (player.data.lastPausedAt ?? now) - startTime)
         : Math.max(0, now - startTime);
 
-      const adjustedMs = Math.max(0, rawMs - manualOffsetMs);
+      const compensatedMs = Math.max(0, rawMs - rttCompensationMs);
+      const adjustedMs = Math.max(0, compensatedMs - syncOffsetMs);
+      smoothTimeRef.current = adjustedMs;
 
       if (currentPositionRef.current) {
         currentPositionRef.current.textContent = formatSec(adjustedMs / 1000);
@@ -419,7 +444,16 @@ const Index = () => {
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [player.data?.startTime, player.data?.positionSec, player.data?.durationSec, player.data?.isPaused, player.data?.lastPausedAt, manualOffsetMs, normalizedLyrics]);
+  }, [
+    player.data?.startTime,
+    player.data?.positionSec,
+    player.data?.durationSec,
+    player.data?.isPaused,
+    player.data?.lastPausedAt,
+    rttCompensationMs,
+    syncOffsetMs,
+    normalizedLyrics,
+  ]);
 
   useEffect(() => {
     if (typeof player.data?.volume === "number") {
@@ -461,6 +495,16 @@ const Index = () => {
   };
 
   const loadPreset = (preset: ApiPreset) => loadPresetMutation.mutate(preset.name);
+
+  const handleLyricSync = (idx: number, lineTimeMs: number | null) => {
+    const clickedLineTime = lineTimeMs ?? idx * LYRIC_HOLD_WINDOW_MS;
+    const currentSmoothTime = smoothTimeRef.current;
+    const newOffset = clickedLineTime - currentSmoothTime;
+
+    setSyncOffsetMs(newOffset);
+    setActiveLine(idx);
+    toast({ title: "Syncing...", description: "Lyric calibration updated." });
+  };
 
   const handleDrop = useCallback(
     (newIndex: number) => {
