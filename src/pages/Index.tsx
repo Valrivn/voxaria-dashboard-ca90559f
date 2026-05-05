@@ -228,7 +228,7 @@ const Index = () => {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const pitchDetectorRef = useRef<PitchDetector<number[]> | null>(null);
-  const micBufferRef = useRef<Float32Array | null>(null);
+  const micByteBufferRef = useRef<Uint8Array | null>(null);
   const latestPitchHzRef = useRef<number | null>(null);
 
   const [sessionUsers, setSessionUsers] = useState<SessionUser[]>([
@@ -660,7 +660,7 @@ const Index = () => {
       audioContextRef.current = audioContext;
       analyserRef.current = analyser;
       pitchDetectorRef.current = detector;
-      micBufferRef.current = new Float32Array(analyser.fftSize);
+      micByteBufferRef.current = new Uint8Array(analyser.fftSize);
 
       setKaraokeEnabled(true);
       setKaraokeScore(0);
@@ -693,7 +693,7 @@ const Index = () => {
 
     analyserRef.current = null;
     pitchDetectorRef.current = null;
-    micBufferRef.current = null;
+    micByteBufferRef.current = null;
     latestPitchHzRef.current = null;
     setDetectedPitchHz(null);
     setKaraokeEnabled(false);
@@ -712,15 +712,16 @@ const Index = () => {
   }, [maxCombo]);
 
   useEffect(() => {
-    if (!karaokeEnabled || !analyserRef.current || !pitchDetectorRef.current || !micBufferRef.current) return;
+    if (!karaokeEnabled || !analyserRef.current || !pitchDetectorRef.current || !micByteBufferRef.current) return;
 
     const analyzer = analyserRef.current;
     const detector = pitchDetectorRef.current;
-    const buffer = micBufferRef.current;
+    const byteBuffer = micByteBufferRef.current;
 
     const detectFrame = () => {
-      analyzer.getFloatTimeDomainData(buffer);
-      const [pitchHz, clarity] = detector.findPitch(Array.from(buffer), audioContextRef.current?.sampleRate ?? 44100);
+      analyzer.getByteTimeDomainData(byteBuffer);
+      const normalizedSamples = Array.from(byteBuffer, (sample) => (sample - 128) / 128);
+      const [pitchHz, clarity] = detector.findPitch(normalizedSamples, audioContextRef.current?.sampleRate ?? 44100);
 
       if (pitchHz > 0 && clarity >= MIN_PITCH_CLARITY) {
         latestPitchHzRef.current = pitchHz;
