@@ -227,7 +227,7 @@ const Index = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const pitchDetectorRef = useRef<PitchDetector<Float32Array> | null>(null);
+  const pitchDetectorRef = useRef<PitchDetector<number[]> | null>(null);
   const micBufferRef = useRef<Float32Array | null>(null);
   const latestPitchHzRef = useRef<number | null>(null);
 
@@ -653,7 +653,7 @@ const Index = () => {
       analyser.fftSize = 2048;
       source.connect(analyser);
 
-      const detector = PitchDetector.forFloat32Array(analyser.fftSize);
+      const detector = PitchDetector.forNumberArray(analyser.fftSize);
       detector.clarityThreshold = MIN_PITCH_CLARITY;
 
       mediaStreamRef.current = stream;
@@ -720,7 +720,7 @@ const Index = () => {
 
     const detectFrame = () => {
       analyzer.getFloatTimeDomainData(buffer);
-      const [pitchHz, clarity] = detector.findPitch(buffer as unknown as Float32Array, audioContextRef.current?.sampleRate ?? 44100);
+      const [pitchHz, clarity] = detector.findPitch(Array.from(buffer), audioContextRef.current?.sampleRate ?? 44100);
 
       if (pitchHz > 0 && clarity >= MIN_PITCH_CLARITY) {
         latestPitchHzRef.current = pitchHz;
