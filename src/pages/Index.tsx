@@ -270,13 +270,6 @@ const Index = () => {
     refetchInterval: 5000,
   });
   const presets = useQuery({ queryKey: ["presets"], queryFn: voxariaApi.getPresets, refetchInterval: 30000 });
-  const pitchMap = useQuery({
-    queryKey: ["pitch-map", currentTrackKey],
-    enabled: Boolean(currentTrack.title || currentTrack.artist),
-    queryFn: () => voxariaApi.getPitchMap(currentTrack.title, currentTrack.artist),
-    refetchInterval: 30000,
-  });
-
   const playlistSearch = useQuery({
     queryKey: ["playlist-search", playlistBuilderQuery],
     enabled: playlistBuilderQuery.trim().length > 1,
@@ -435,6 +428,12 @@ const Index = () => {
 
   const currentTrackKey = `${currentTrack.title}::${currentTrack.artist}`;
   const normalizedLyrics = useMemo(() => (lyricsData?.lines ?? []).map(parseLyricLine).filter((line) => line.text.length > 0), [lyricsData?.lines]);
+  const pitchMap = useQuery({
+    queryKey: ["pitch-map", currentTrackKey],
+    enabled: Boolean(currentTrack.title || currentTrack.artist),
+    queryFn: () => voxariaApi.getPitchMap(currentTrack.title, currentTrack.artist),
+    refetchInterval: 30000,
+  });
   const currentPitchMap = useMemo<ApiPitchMap | null>(() => {
     if (!pitchMap.data?.frames?.length) return null;
     return pitchMap.data;
