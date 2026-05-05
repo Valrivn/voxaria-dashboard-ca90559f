@@ -700,6 +700,17 @@ const Index = () => {
     setKaraokeEnabled(false);
   }, []);
 
+  const detectedNoteLabel = useMemo(() => {
+    if (!detectedPitchHz) return "--";
+    const midi = Math.round(12 * Math.log2(detectedPitchHz / 440) + 69);
+    return NOTE_NAMES[((midi % 12) + 12) % 12];
+  }, [detectedPitchHz]);
+
+  const playlistNames = useMemo(() => {
+    const names = Object.keys(customPlaylists);
+    return names.length ? names : [activePlaylist];
+  }, [customPlaylists, activePlaylist]);
+
   useEffect(() => {
     karaokeScoreRef.current = karaokeScore;
   }, [karaokeScore]);
@@ -959,6 +970,15 @@ const Index = () => {
                     </p>
                   </div>
 
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant={karaokeEnabled ? "secondary" : "outline"}
+                      className="border-primary/55 text-primary hover:bg-accent/40"
+                      onClick={() => (karaokeEnabled ? stopKaraoke() : void startKaraoke())}
+                    >
+                      {karaokeEnabled ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                      {karaokeEnabled ? "Stop Karaoke" : "Start Karaoke"}
+                    </Button>
                     <Button
                     variant="outline"
                     className="border-primary/55 text-primary hover:bg-accent/40"
@@ -967,6 +987,7 @@ const Index = () => {
                   >
                     Refresh Lyrics
                   </Button>
+                  </div>
                 </div>
 
                 <div className="mb-3 rounded-md border border-primary/45 bg-accent/25 px-3 py-2 text-sm text-primary neon-glow">
@@ -977,31 +998,58 @@ const Index = () => {
                       : `Source: ${lyricsData?.source || "Unknown"}`}
                 </div>
 
-                <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
-                  <div className="space-y-2">
-                    {normalizedLyrics.length ? (
-                      normalizedLyrics.map((line, idx) => (
-                      <button
-                        key={`${line.text}-${idx}`}
-                        data-lyric-index={idx}
-                        data-lyric-time={line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS}
-                        onClick={() => handleLyricSync(idx, line.timeMs)}
-                        className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
-                          idx === activeLine
-                            ? "border-primary bg-accent/35 text-primary neon-glow neon-text"
-                            : "border-transparent text-foreground/85 hover:bg-muted/50 hover:text-foreground"
-                        }`}
-                      >
-                        {line.text}
-                      </button>
-                      ))
-                    ) : (
-                      <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
-                        {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
-                      </p>
-                    )}
+                <div className="mb-3 grid grid-cols-2 gap-2 rounded-md border border-border/70 bg-panel/70 p-2 text-xs">
+                  <div className="rounded-sm border border-border/70 bg-panel-soft/70 px-2 py-1">
+                    <p className="text-muted-foreground">Score</p>
+                    <p className="text-sm font-semibold text-primary">{karaokeScore.toLocaleString()}</p>
+                  </div>
+                  <div className="rounded-sm border border-border/70 bg-panel-soft/70 px-2 py-1">
+                    <p className="text-muted-foreground">Combo</p>
+                    <p className="text-sm font-semibold text-primary">x{karaokeCombo}</p>
+                  </div>
+                  <div className="rounded-sm border border-border/70 bg-panel-soft/70 px-2 py-1">
+                    <p className="text-muted-foreground">Detected Note</p>
+                    <p className="text-sm font-semibold text-primary">{detectedNoteLabel}</p>
+                  </div>
+                  <div className="rounded-sm border border-border/70 bg-panel-soft/70 px-2 py-1">
+                    <p className="text-muted-foreground">Pitch Map</p>
+                    <p className="text-sm font-semibold text-primary">{currentPitchMap?.frames?.length ? "Ready" : "Unavailable"}</p>
                   </div>
                 </div>
+
+                <Collapsible open={lyricsOpen} onOpenChange={setLyricsOpen} className="min-h-0 flex-1 rounded-md border border-border/70 bg-panel/75">
+                  <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium text-primary hover:bg-accent/25">
+                    <span>Lyrics / Karaoke</span>
+                    {lyricsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="h-[380px] border-t border-border/70 px-2 py-2">
+                    <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
+                      <div className="space-y-2">
+                        {normalizedLyrics.length ? (
+                          normalizedLyrics.map((line, idx) => (
+                            <button
+                              key={`${line.text}-${idx}`}
+                              data-lyric-index={idx}
+                              data-lyric-time={line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS}
+                              onClick={() => handleLyricSync(idx, line.timeMs)}
+                              className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
+                                idx === activeLine
+                                  ? "border-primary bg-accent/35 text-primary neon-glow neon-text"
+                                  : "border-transparent text-foreground/85 hover:bg-muted/50 hover:text-foreground"
+                              }`}
+                            >
+                              {line.text}
+                            </button>
+                          ))
+                        ) : (
+                          <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
+                            {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
               </article>
 
               <aside className="flex min-h-[520px] flex-col gap-4 rounded-md border border-border/70 bg-panel-soft/70 p-3 shadow-soft">
@@ -1030,7 +1078,18 @@ const Index = () => {
                 <section className="flex min-h-0 flex-1 flex-col rounded-md border border-primary/40 bg-panel/80 p-3">
                   <div className="mb-2 flex items-center justify-between">
                     <h3 className="text-base font-semibold text-primary">Upcoming Queue</h3>
-                    <Badge className="bg-accent text-accent-foreground">{(queue.data ?? []).length} tracks</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-accent text-accent-foreground">{(queue.data ?? []).length} tracks</Badge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 border-primary/55 text-primary hover:bg-accent/35"
+                        onClick={() => shuffleQueueMutation.mutate()}
+                        disabled={shuffleQueueMutation.isPending}
+                      >
+                        <Shuffle className="h-3.5 w-3.5" /> Shuffle
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="space-y-2 overflow-y-auto pr-1">
