@@ -699,6 +699,115 @@ const Index = () => {
     setKaraokeEnabled(false);
   }, []);
 
+  useEffect(() => {
+    karaokeScoreRef.current = karaokeScore;
+  }, [karaokeScore]);
+
+  useEffect(() => {
+    karaokeComboRef.current = karaokeCombo;
+  }, [karaokeCombo]);
+
+  useEffect(() => {
+    karaokeMaxComboRef.current = maxCombo;
+  }, [maxCombo]);
+
+  useEffect(() => {
+    if (!karaokeEnabled || !analyserRef.current || !pitchDetectorRef.current || !micBufferRef.current) return;
+
+    const analyzer = analyserRef.current;
+    const detector = pitchDetectorRef.current;
+    const buffer = micBufferRef.current;
+
+    const detectFrame = () => {
+      analyzer.getFloatTimeDomainData(buffer);
+      const [pitchHz, clarity] = detector.findPitch(buffer, audioContextRef.current?.sampleRate ?? 44100);
+
+      if (pitchHz > 0 && clarity >= MIN_PITCH_CLARITY) {
+        latestPitchHzRef.current = pitchHz;
+        setDetectedPitchHz(pitchHz);
+      } else {
+        latestPitchHzRef.current = null;
+        setDetectedPitchHz(null);
+      }
+
+      karaokeAnimationRef.current = requestAnimationFrame(detectFrame);
+    };
+
+    karaokeAnimationRef.current = requestAnimationFrame(detectFrame);
+    return () => {
+      if (karaokeAnimationRef.current) cancelAnimationFrame(karaokeAnimationRef.current);
+      karaokeAnimationRef.current = null;
+    };
+  }, [karaokeEnabled]);
+
+  useEffect(() => {
+    if (!karaokeEnabled || !currentPitchMap?.frames?.length) return;
+
+    const toSemitone = (pitchHz: number) => {
+      const midi = Math.round(12 * Math.log2(pitchHz / 440) + 69);
+      return ((midi % 12) + 12) % 12;
+    };
+
+    karaokeIntervalRef.current = window.setInterval(() => {
+      const nowMs = smoothTimeRef.current;
+      const targetSemitone = getNearestPitchSemitone(currentPitchMap.frames, nowMs);
+      const sungHz = latestPitchHzRef.current;
+
+      if (targetSemitone === null || !sungHz) {
+        if (karaokeComboRef.current !== 0) {
+          karaokeComboRef.current = 0;
+          setKaraokeCombo(0);
+        }
+        return;
+      }
+
+      const sungSemitone = toSemitone(sungHz);
+      const delta = Math.abs(sungSemitone - targetSemitone);
+      const wrappedDelta = Math.min(delta, 12 - delta);
+      const onNote = wrappedDelta <= OCTAVE_TOLERANCE_SEMITONES;
+
+      if (onNote) {
+        const nextCombo = karaokeComboRef.current + 1;
+        const gain = 100 + nextCombo * 8;
+        const nextScore = karaokeScoreRef.current + gain;
+
+        karaokeComboRef.current = nextCombo;
+        karaokeScoreRef.current = nextScore;
+        karaokeMaxComboRef.current = Math.max(karaokeMaxComboRef.current, nextCombo);
+
+        setKaraokeCombo(nextCombo);
+        setKaraokeScore(nextScore);
+        setMaxCombo(karaokeMaxComboRef.current);
+      } else if (karaokeComboRef.current !== 0) {
+        karaokeComboRef.current = 0;
+        setKaraokeCombo(0);
+      }
+    }, KARAOKE_SCORE_TICK_MS);
+
+    return () => {
+      if (karaokeIntervalRef.current) window.clearInterval(karaokeIntervalRef.current);
+      karaokeIntervalRef.current = null;
+    };
+  }, [karaokeEnabled, currentPitchMap, getNearestPitchSemitone]);
+
+  useEffect(() => {
+    if (!karaokeEnabled || !player.data?.durationSec) return;
+
+    const endWatcher = window.setInterval(() => {
+      const ended = smoothTimeRef.current >= player.data.durationSec * 1000;
+      if (!ended) return;
+
+      stopKaraoke();
+      setScoreSummaryOpen(true);
+      toast({ title: "Song complete", description: "Karaoke score summary is ready." });
+      window.clearInterval(endWatcher);
+    }, 400);
+
+    return () => window.clearInterval(endWatcher);
+  }, [karaokeEnabled, player.data?.durationSec, stopKaraoke]);
+
+  useEffect(() => () => stopKaraoke(), [stopKaraoke]);
+
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-background p-4 text-foreground">
