@@ -577,21 +577,6 @@ const Index = () => {
               </Button>
             </div>
 
-            <div className="mb-3 rounded-md border border-primary/45 bg-panel/65 px-3 py-2">
-              <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-                <span>Manual Offset</span>
-                <span className="font-semibold text-primary neon-text">{(manualOffsetMs / 1000).toFixed(1)}s</span>
-              </div>
-              <Slider
-                value={[manualOffsetMs]}
-                min={-5000}
-                max={15000}
-                step={100}
-                onValueChange={([v]) => setManualOffsetMs(v)}
-                className="neon-glow"
-              />
-            </div>
-
             <div className="mb-3 rounded-md border border-primary/45 bg-accent/25 px-3 py-2 text-sm text-primary neon-glow">
               {lyricsServiceUnavailable
                 ? "Service Unavailable"
@@ -607,7 +592,8 @@ const Index = () => {
                     <button
                       key={`${line.text}-${idx}`}
                       data-lyric-index={idx}
-                      onClick={() => setActiveLine(idx)}
+                      data-lyric-time={line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS}
+                      onClick={() => handleLyricSync(idx, line.timeMs)}
                       className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
                         idx === activeLine
                           ? "border-primary bg-accent/35 text-primary neon-glow neon-text"
@@ -719,21 +705,6 @@ const Index = () => {
                   </Button>
                 </div>
 
-                  <div className="mb-3 rounded-md border border-primary/45 bg-panel/65 px-3 py-2">
-                    <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-                      <span>Manual Offset</span>
-                      <span className="font-semibold text-primary neon-text">{(manualOffsetMs / 1000).toFixed(1)}s</span>
-                    </div>
-                    <Slider
-                      value={[manualOffsetMs]}
-                      min={-5000}
-                      max={15000}
-                      step={100}
-                      onValueChange={([v]) => setManualOffsetMs(v)}
-                      className="neon-glow"
-                    />
-                  </div>
-
                 <div className="mb-3 rounded-md border border-primary/45 bg-accent/25 px-3 py-2 text-sm text-primary neon-glow">
                   {lyricsServiceUnavailable
                     ? "Service Unavailable"
@@ -749,7 +720,8 @@ const Index = () => {
                       <button
                         key={`${line.text}-${idx}`}
                         data-lyric-index={idx}
-                        onClick={() => setActiveLine(idx)}
+                        data-lyric-time={line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS}
+                        onClick={() => handleLyricSync(idx, line.timeMs)}
                         className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
                           idx === activeLine
                             ? "border-primary bg-accent/35 text-primary neon-glow neon-text"
