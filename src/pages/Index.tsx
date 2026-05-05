@@ -75,6 +75,7 @@ const LYRIC_CALIBRATION_STORAGE_KEY = "voxaria.lyricCalibrationOffsetMs";
 const KARAOKE_SCORE_TICK_MS = 120;
 const MIN_PITCH_CLARITY = 0.78;
 const OCTAVE_TOLERANCE_SEMITONES = 1;
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 const navItems: NavItem[] = [
   { label: "Visualizer", icon: Disc3 },
