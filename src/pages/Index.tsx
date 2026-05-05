@@ -719,7 +719,7 @@ const Index = () => {
     const byteBuffer = micByteBufferRef.current;
 
     const detectFrame = () => {
-      analyzer.getByteTimeDomainData(byteBuffer);
+      analyzer.getByteTimeDomainData(byteBuffer as unknown as Uint8Array<ArrayBuffer>);
       const normalizedSamples = Array.from(byteBuffer, (sample) => (sample - 128) / 128);
       const [pitchHz, clarity] = detector.findPitch(normalizedSamples, audioContextRef.current?.sampleRate ?? 44100);
 
