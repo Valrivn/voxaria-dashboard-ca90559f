@@ -874,6 +874,14 @@ const Index = () => {
                           ? "border-l-[4px] bg-accent/35 text-primary neon-glow neon-text"
                           : "border-transparent text-foreground/85 hover:bg-muted/50 hover:text-foreground"
                       }`}
+                      style={
+                        idx === activeLine
+                          ? {
+                              borderLeftColor: "#39ff14",
+                              textShadow: "0 0 10px rgba(57, 255, 20, 0.8)",
+                            }
+                          : undefined
+                      }
                     >
                       {line.text}
                     </button>
@@ -1037,6 +1045,14 @@ const Index = () => {
                                   ? "border-l-[4px] bg-accent/35 text-primary neon-glow neon-text"
                                   : "border-transparent text-foreground/85 hover:bg-muted/50 hover:text-foreground"
                               }`}
+                              style={
+                                idx === activeLine
+                                  ? {
+                                      borderLeftColor: "#39ff14",
+                                      textShadow: "0 0 10px rgba(57, 255, 20, 0.8)",
+                                    }
+                                  : undefined
+                              }
                             >
                               {line.text}
                             </button>
