@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ChevronDown,
+  ChevronUp,
   GripVertical,
   Disc3,
   History,
   ListMusic,
   Loader2,
+  Mic,
+  MicOff,
   LogOut,
   Pause,
   Play,
@@ -17,6 +21,8 @@ import {
   SkipForward,
   Square,
   Trash2,
+  Shuffle,
+  Trophy,
   UserCircle2,
   Volume2,
   X,
@@ -30,6 +36,7 @@ import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -38,8 +45,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { PitchDetector } from "pitchy";
 import { toast } from "@/hooks/use-toast";
-import { mockData, voxariaApi, type ApiLyrics, type ApiPreset, type ApiTrack } from "@/lib/voxaria-api";
+import {
+  mockData,
+  voxariaApi,
+  type ApiLyrics,
+  type ApiPitchMap,
+  type ApiPreset,
+  type ApiSearchResult,
+  type ApiTrack,
+} from "@/lib/voxaria-api";
 
 type NavItem = { label: string; icon: typeof Disc3 };
 type LyricLine = { text: string; timeMs: number | null };
@@ -56,6 +72,9 @@ type SessionUser = {
 const LYRIC_OFFSET_DEFAULT_MS = 3000;
 const LYRIC_HOLD_WINDOW_MS = 3000;
 const LYRIC_CALIBRATION_STORAGE_KEY = "voxaria.lyricCalibrationOffsetMs";
+const KARAOKE_SCORE_TICK_MS = 120;
+const MIN_PITCH_CLARITY = 0.78;
+const OCTAVE_TOLERANCE_SEMITONES = 1;
 
 const navItems: NavItem[] = [
   { label: "Visualizer", icon: Disc3 },
