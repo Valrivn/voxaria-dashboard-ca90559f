@@ -200,13 +200,36 @@ const Index = () => {
   const [savePresetOpen, setSavePresetOpen] = useState(false);
   const [presetName, setPresetName] = useState("");
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [lyricsOpen, setLyricsOpen] = useState(true);
+  const [karaokeEnabled, setKaraokeEnabled] = useState(false);
+  const [karaokeScore, setKaraokeScore] = useState(0);
+  const [karaokeCombo, setKaraokeCombo] = useState(0);
+  const [maxCombo, setMaxCombo] = useState(0);
+  const [scoreSummaryOpen, setScoreSummaryOpen] = useState(false);
+  const [detectedPitchHz, setDetectedPitchHz] = useState<number | null>(null);
+  const [playlistBuilderQuery, setPlaylistBuilderQuery] = useState("");
+  const [playlistName, setPlaylistName] = useState("My Playlist");
+  const [customPlaylists, setCustomPlaylists] = useState<Record<string, ApiSearchResult[]>>({});
+  const [activePlaylist, setActivePlaylist] = useState("My Playlist");
 
   const animationFrameRef = useRef<number | null>(null);
+  const karaokeAnimationRef = useRef<number | null>(null);
+  const karaokeIntervalRef = useRef<number | null>(null);
   const lyricsContainerRef = useRef<HTMLDivElement | null>(null);
   const activeLineRef = useRef(0);
   const smoothTimeRef = useRef(0);
   const currentPositionRef = useRef<HTMLSpanElement | null>(null);
   const totalDurationRef = useRef<HTMLSpanElement | null>(null);
+  const karaokeStartTimeRef = useRef<number | null>(null);
+  const karaokeScoreRef = useRef(0);
+  const karaokeComboRef = useRef(0);
+  const karaokeMaxComboRef = useRef(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const pitchDetectorRef = useRef<PitchDetector<Float32Array> | null>(null);
+  const micBufferRef = useRef<Float32Array | null>(null);
+  const latestPitchHzRef = useRef<number | null>(null);
 
   const [sessionUsers, setSessionUsers] = useState<SessionUser[]>([
     {
@@ -247,6 +270,19 @@ const Index = () => {
     refetchInterval: 5000,
   });
   const presets = useQuery({ queryKey: ["presets"], queryFn: voxariaApi.getPresets, refetchInterval: 30000 });
+  const pitchMap = useQuery({
+    queryKey: ["pitch-map", currentTrackKey],
+    enabled: Boolean(currentTrack.title || currentTrack.artist),
+    queryFn: () => voxariaApi.getPitchMap(currentTrack.title, currentTrack.artist),
+    refetchInterval: 30000,
+  });
+
+  const playlistSearch = useQuery({
+    queryKey: ["playlist-search", playlistBuilderQuery],
+    enabled: playlistBuilderQuery.trim().length > 1,
+    queryFn: () => voxariaApi.searchCatalog(playlistBuilderQuery.trim()),
+    staleTime: 10000,
+  });
 
   const refreshAll = () => {
     void queryClient.invalidateQueries({ queryKey: ["queue"] });
@@ -357,6 +393,15 @@ const Index = () => {
     onError: () => toast({ title: "Load failed", description: "Could not load preset.", variant: "destructive" }),
   });
 
+  const shuffleQueueMutation = useMutation({
+    mutationFn: voxariaApi.shuffleQueue,
+    onSuccess: () => {
+      toast({ title: "Queue shuffled" });
+      void queryClient.invalidateQueries({ queryKey: ["queue"] });
+    },
+    onError: () => toast({ title: "Shuffle failed", description: "Could not shuffle queue.", variant: "destructive" }),
+  });
+
   const lyricsMutation = useMutation({
     mutationFn: async ({ title, artist }: { title: string; artist: string }) => voxariaApi.getLyrics(title, artist),
     onSuccess: (data) => {
@@ -390,6 +435,11 @@ const Index = () => {
 
   const currentTrackKey = `${currentTrack.title}::${currentTrack.artist}`;
   const normalizedLyrics = useMemo(() => (lyricsData?.lines ?? []).map(parseLyricLine).filter((line) => line.text.length > 0), [lyricsData?.lines]);
+  const currentPitchMap = useMemo<ApiPitchMap | null>(() => {
+    if (!pitchMap.data?.frames?.length) return null;
+    return pitchMap.data;
+  }, [pitchMap.data]);
+  const resolvedPlaylistTracks = customPlaylists[activePlaylist] ?? [];
 
   useEffect(() => {
     if (!currentTrack.title && !currentTrack.artist) {
@@ -564,6 +614,91 @@ const Index = () => {
     setCurrentUser(null);
     toast({ title: "Logged out", description: "Role-gated controls are now hidden." });
   };
+
+  const getNearestPitchSemitone = useCallback((frames: ApiPitchMap["frames"], atMs: number) => {
+    if (!frames.length) return null;
+
+    let nearest = frames[0];
+    for (let i = 1; i < frames.length; i += 1) {
+      const candidate = frames[i];
+      if (Math.abs(candidate.timeMs - atMs) < Math.abs(nearest.timeMs - atMs)) nearest = candidate;
+    }
+
+    return nearest.midi % 12;
+  }, []);
+
+  const addTrackToPlaylist = (track: ApiSearchResult) => {
+    const normalizedName = playlistName.trim() || "My Playlist";
+    setActivePlaylist(normalizedName);
+    setCustomPlaylists((prev) => {
+      const existing = prev[normalizedName] ?? [];
+      if (existing.some((item) => item.id === track.id)) return prev;
+      return { ...prev, [normalizedName]: [...existing, track] };
+    });
+    toast({ title: "Added to playlist", description: `${track.title} was added to ${normalizedName}.` });
+  };
+
+  const removeTrackFromPlaylist = (trackId: string) => {
+    setCustomPlaylists((prev) => ({
+      ...prev,
+      [activePlaylist]: (prev[activePlaylist] ?? []).filter((track) => track.id !== trackId),
+    }));
+  };
+
+  const startKaraoke = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+
+      const detector = PitchDetector.forFloat32Array(analyser.fftSize);
+      detector.clarityThreshold = MIN_PITCH_CLARITY;
+
+      mediaStreamRef.current = stream;
+      audioContextRef.current = audioContext;
+      analyserRef.current = analyser;
+      pitchDetectorRef.current = detector;
+      micBufferRef.current = new Float32Array(analyser.fftSize);
+
+      setKaraokeEnabled(true);
+      setKaraokeScore(0);
+      setKaraokeCombo(0);
+      setMaxCombo(0);
+      karaokeScoreRef.current = 0;
+      karaokeComboRef.current = 0;
+      karaokeMaxComboRef.current = 0;
+      karaokeStartTimeRef.current = Date.now();
+      setScoreSummaryOpen(false);
+      toast({ title: "Karaoke enabled", description: "Mic input connected." });
+    } catch {
+      toast({ title: "Mic unavailable", description: "Allow microphone access to start karaoke mode.", variant: "destructive" });
+    }
+  };
+
+  const stopKaraoke = useCallback(() => {
+    if (karaokeAnimationRef.current) cancelAnimationFrame(karaokeAnimationRef.current);
+    if (karaokeIntervalRef.current) window.clearInterval(karaokeIntervalRef.current);
+    karaokeAnimationRef.current = null;
+    karaokeIntervalRef.current = null;
+
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+
+    if (audioContextRef.current) {
+      void audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+
+    analyserRef.current = null;
+    pitchDetectorRef.current = null;
+    micBufferRef.current = null;
+    latestPitchHzRef.current = null;
+    setDetectedPitchHz(null);
+    setKaraokeEnabled(false);
+  }, []);
 
   if (!currentUser) {
     return (
