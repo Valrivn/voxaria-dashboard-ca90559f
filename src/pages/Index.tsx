@@ -720,7 +720,7 @@ const Index = () => {
 
     const detectFrame = () => {
       analyzer.getFloatTimeDomainData(buffer);
-      const [pitchHz, clarity] = detector.findPitch(buffer, audioContextRef.current?.sampleRate ?? 44100);
+      const [pitchHz, clarity] = detector.findPitch(buffer as unknown as Float32Array, audioContextRef.current?.sampleRate ?? 44100);
 
       if (pitchHz > 0 && clarity >= MIN_PITCH_CLARITY) {
         latestPitchHzRef.current = pitchHz;
