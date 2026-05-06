@@ -82,6 +82,7 @@ type PlaybackAction = "previous" | "play_pause" | "next" | "stop";
 
 const BASE_URL = "https://unhitched-shrink-dorsal.ngrok-free.dev";
 const OWNER_USER_ID = "owner";
+const OWNER_API_KEY = "owner";
 const ENDPOINTS = {
   queue: "/music/queue",
   history: "/music/history",
@@ -113,13 +114,16 @@ const ENDPOINTS = {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!BASE_URL) throw new Error("Set VITE_VOXARIA_API_BASE_URL to enable live API mode.");
 
+  const extraHeaders = new Headers(init?.headers);
+
   const response = await fetch(`${BASE_URL}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
       "ngrok-skip-browser-warning": "true",
       "x-user-id": OWNER_USER_ID,
-      ...(init?.headers ?? {}),
+      "x-api-key": OWNER_API_KEY,
+      ...Object.fromEntries(extraHeaders.entries()),
     },
   });
 
