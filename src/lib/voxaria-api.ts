@@ -69,9 +69,19 @@ export type ApiSearchResult = {
   thumbnail?: string;
 };
 
+export type ApiAuditTrack = {
+  id: string;
+  title: string;
+  requesterAvatar?: string;
+  requestedAt?: string;
+  createdAt?: string;
+  timestamp?: string;
+};
+
 type PlaybackAction = "previous" | "play_pause" | "next" | "stop";
 
 const BASE_URL = "https://unhitched-shrink-dorsal.ngrok-free.dev";
+const OWNER_USER_ID = "owner";
 const ENDPOINTS = {
   queue: "/music/queue",
   history: "/music/history",
@@ -97,6 +107,7 @@ const ENDPOINTS = {
   presetsLoad: "/presets/load",
   pitchMap: "/music/pitch-map",
   searchResults: "/music/search/results",
+  audit: "/api/audit",
 } as const;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -107,12 +118,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       "Content-Type": "application/json",
       "ngrok-skip-browser-warning": "true",
+      "x-user-id": OWNER_USER_ID,
       ...(init?.headers ?? {}),
     },
   });
 
   if (!response.ok) {
     const body = await response.text();
+    console.log("Backend request failed:", body || response.statusText);
     throw new Error(`API ${response.status}: ${body || "unknown error"}`);
   }
 
@@ -180,6 +193,7 @@ export const voxariaApi = {
       method: "POST",
       body: JSON.stringify({ query }),
     }),
+  getAuditLog: () => request<ApiAuditTrack[]>(ENDPOINTS.audit),
 };
 
 export const mockData = {
