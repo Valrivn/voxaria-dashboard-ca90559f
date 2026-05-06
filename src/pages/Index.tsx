@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/dialog";
 import { PitchDetector } from "pitchy";
 import { toast } from "@/hooks/use-toast";
+import { AuditLogViewer } from "@/components/AuditLogViewer";
 import {
   mockData,
   voxariaApi,
@@ -302,7 +303,10 @@ const Index = () => {
       setRequestTerm("");
       void queryClient.invalidateQueries({ queryKey: ["queue"] });
     },
-    onError: () => toast({ title: "Request failed", description: "Could not submit request.", variant: "destructive" }),
+    onError: (error) => {
+      console.log("Song request failed:", error instanceof Error ? error.message : error);
+      toast({ title: "Request failed", description: "Could not submit request.", variant: "destructive" });
+    },
   });
 
   const playbackMutation = useMutation({
@@ -1240,6 +1244,8 @@ const Index = () => {
                 )}
               </div>
             </article>
+
+            <AuditLogViewer />
 
             <article className="rounded-xl border border-primary/35 bg-panel-soft/70 p-4 shadow-soft neon-edge">
               <div className="mb-3 flex items-center justify-between gap-2">
