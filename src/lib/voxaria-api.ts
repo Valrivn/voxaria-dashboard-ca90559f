@@ -80,7 +80,7 @@ export type ApiAuditTrack = {
 
 type PlaybackAction = "previous" | "play_pause" | "next" | "stop";
 
-const BASE_URL = "https://unhitched-shrink-dorsal.ngrok-free.dev";
+export const BASE_URL = import.meta.env.VITE_VOXARIA_API_BASE_URL?.trim() || "https://unhitched-shrink-dorsal.ngrok-free.dev";
 const OWNER_USER_ID = "owner";
 const OWNER_API_KEY = "owner";
 const ENDPOINTS = {
@@ -90,7 +90,7 @@ const ENDPOINTS = {
   cache: "/system/audio-cache",
   settings: "/system/settings",
   player: "/music/player",
-  search: "/music/search",
+  search: "/library/search",
   playback: "/music/playback",
   clearQueue: "/music/queue/clear",
   join: "/discord/join",
@@ -153,8 +153,26 @@ export const voxariaApi = {
   getCache: () => request<ApiCache>(ENDPOINTS.cache),
   getSettings: () => request<ApiSettings>(ENDPOINTS.settings),
   getPlayer: () => request<ApiPlayer>(ENDPOINTS.player),
-  search: (query: string) =>
-    request<{ ok: boolean; queued?: number }>(ENDPOINTS.search, { method: "POST", body: JSON.stringify({ query }) }),
+  search: async (query: string) => {
+    const normalizedQuery = query.trim();
+
+    try {
+      return await request<{ ok: boolean; queued?: number }>(
+        `${ENDPOINTS.search}?q=${encodeURIComponent(normalizedQuery)}`,
+        { method: "GET" }
+      );
+    } catch (error) {
+      const statusMatch = error instanceof Error ? error.message.match(/API\s(\d+):/) : null;
+
+      if (statusMatch) {
+        console.error(`Song search failed with HTTP status ${statusMatch[1]}`);
+      } else {
+        console.error("Song search failed:", error);
+      }
+
+      throw error;
+    }
+  },
   playback: (action: PlaybackAction) =>
     request<{ ok: boolean }>(ENDPOINTS.playback, { method: "POST", body: JSON.stringify({ action }) }),
   clearQueue: () => request<{ ok: boolean }>(ENDPOINTS.clearQueue, { method: "POST" }),
