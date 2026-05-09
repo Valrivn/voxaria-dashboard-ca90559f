@@ -153,25 +153,37 @@ export const voxariaApi = {
   getCache: () => request<ApiCache>(ENDPOINTS.cache),
   getSettings: () => request<ApiSettings>(ENDPOINTS.settings),
   getPlayer: () => request<ApiPlayer>(ENDPOINTS.player),
-  search: async (query: string) => {
-    const normalizedQuery = query.trim();
+  search: async (query: string, guildId: string) => {
+    const endpoint = "/music/search";
+    const response = await fetch(`${BASE_URL}${endpoint}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true",
+        "x-user-id": OWNER_USER_ID,
+        "x-api-key": OWNER_API_KEY,
+      },
+      body: JSON.stringify({
+        query,
+        guildId,
+      }),
+    });
 
-    try {
-      return await request<{ ok: boolean; queued?: number }>(
-        `${ENDPOINTS.search}?q=${encodeURIComponent(normalizedQuery)}`,
-        { method: "GET" }
-      );
-    } catch (error) {
-      const statusMatch = error instanceof Error ? error.message.match(/API\s(\d+):/) : null;
+    if (!response.ok) {
+      let errorMessage = "Failed to request music";
 
-      if (statusMatch) {
-        console.error(`Song search failed with HTTP status ${statusMatch[1]}`);
-      } else {
-        console.error("Song search failed:", error);
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData?.error || errorMessage;
+      } catch {
+        const rawBody = await response.text();
+        if (rawBody) errorMessage = rawBody;
       }
 
-      throw error;
+      throw new Error(errorMessage);
     }
+
+    return response.json() as Promise<{ ok: boolean; queued?: number }>;
   },
   playback: (action: PlaybackAction) =>
     request<{ ok: boolean }>(ENDPOINTS.playback, { method: "POST", body: JSON.stringify({ action }) }),
