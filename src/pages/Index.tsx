@@ -272,6 +272,13 @@ const Index = () => {
     refetchInterval: 5000,
   });
   const presets = useQuery({ queryKey: ["presets"], queryFn: voxariaApi.getPresets, refetchInterval: 30000 });
+  const activeGuildId = useMemo(() => {
+    const fromSettings = (settings.data as { guildId?: string } | undefined)?.guildId?.trim();
+    if (fromSettings) return fromSettings;
+    const fromEnv = import.meta.env.VITE_VOXARIA_GUILD_ID?.trim();
+    if (fromEnv) return fromEnv;
+    return "owner";
+  }, [settings.data]);
   const playlistSearch = useQuery({
     queryKey: ["playlist-search", playlistBuilderQuery],
     enabled: playlistBuilderQuery.trim().length > 1,
@@ -288,7 +295,7 @@ const Index = () => {
   };
 
   const searchMutation = useMutation({
-    mutationFn: async (query: string) => voxariaApi.search(query),
+    mutationFn: async ({ query, guildId }: { query: string; guildId: string }) => voxariaApi.search(query, guildId),
     onSuccess: () => {
       toast({ title: "Queued", description: "Search request sent to Voxaria." });
       refreshAll();
@@ -297,7 +304,7 @@ const Index = () => {
   });
 
   const requestMutation = useMutation({
-    mutationFn: async (query: string) => voxariaApi.search(query),
+    mutationFn: async ({ query, guildId }: { query: string; guildId: string }) => voxariaApi.search(query, guildId),
     onSuccess: () => {
       toast({ title: "Request submitted", description: "Song request pushed to queue." });
       setRequestTerm("");
@@ -952,7 +959,7 @@ const Index = () => {
               <Button
                 className="h-10 rounded-md neon-glow"
                 disabled={searchMutation.isPending || !searchTerm.trim()}
-                onClick={() => searchMutation.mutate(searchTerm.trim())}
+                onClick={() => searchMutation.mutate({ query: searchTerm.trim(), guildId: activeGuildId })}
               >
                 {searchMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
               </Button>
@@ -1080,7 +1087,7 @@ const Index = () => {
                     onSubmit={(e) => {
                       e.preventDefault();
                       if (!requestTerm.trim()) return;
-                      requestMutation.mutate(requestTerm.trim());
+                      requestMutation.mutate({ query: requestTerm.trim(), guildId: activeGuildId });
                     }}
                   >
                     <Input
