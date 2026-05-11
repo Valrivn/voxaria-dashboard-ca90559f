@@ -27,6 +27,7 @@ export type ApiSettings = {
 export type ApiPlayer = {
   title: string | null;
   artist: string | null;
+  url?: string | null;
   durationSec: number;
   positionSec: number;
   startTime?: number | null;
@@ -59,6 +60,17 @@ export type ApiPitchMap = {
   title: string;
   artist: string;
   frames: ApiPitchFrame[];
+};
+
+export type ApiKaraokeResponse = {
+  title?: string;
+  artist?: string;
+  frames?: ApiPitchFrame[];
+  pitchMap?: {
+    title?: string;
+    artist?: string;
+    frames?: ApiPitchFrame[];
+  };
 };
 
 export type ApiSearchResult = {
@@ -227,6 +239,57 @@ export const voxariaApi = {
       method: "POST",
       body: JSON.stringify({ title: cleanLyricsTitle(title), artist }),
     }),
+  fetchLyrics: async (query: string) => {
+    if (!query?.trim()) throw new Error("Missing search query for lyrics");
+
+    try {
+      const response = await fetch(`${BASE_URL}${ENDPOINTS.lyrics}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify({ query: query.trim() }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        console.error(`fetchLyrics failed: HTTP ${response.status}`, errorText || response.statusText);
+        throw new Error("Failed to fetch lyrics");
+      }
+
+      return response.json() as Promise<{ lyrics?: string }>;
+    } catch (error) {
+      console.error("fetchLyrics request failed:", error);
+      throw error;
+    }
+  },
+  startKaraoke: async (guildId: string, trackUrl: string) => {
+    if (!guildId?.trim() || !trackUrl?.trim()) throw new Error("Missing guildId or trackUrl");
+
+    try {
+      const response = await fetch(`${BASE_URL}/music/karaoke`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
+          "x-guild-id": guildId,
+        },
+        body: JSON.stringify({ guildId, trackUrl: trackUrl.trim() }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        console.error(`startKaraoke failed: HTTP ${response.status}`, errorText || response.statusText);
+        throw new Error("Failed to generate pitch map");
+      }
+
+      return response.json() as Promise<ApiKaraokeResponse>;
+    } catch (error) {
+      console.error("startKaraoke request failed:", error);
+      throw error;
+    }
+  },
   reorderQueue: (oldIndex: number, newIndex: number) =>
     request<{ ok: boolean }>(ENDPOINTS.queueReorder, {
       method: "POST",
