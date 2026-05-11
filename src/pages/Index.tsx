@@ -304,7 +304,7 @@ const Index = () => {
   });
 
   const requestMutation = useMutation({
-    mutationFn: async ({ query, guildId }: { query: string; guildId: string }) => voxariaApi.search(query, guildId),
+    mutationFn: async ({ query, guildId }: { query: string; guildId: string }) => voxariaApi.requestSong(query, guildId),
     onSuccess: () => {
       toast({ title: "Request submitted", description: "Song request pushed to queue." });
       setRequestTerm("");
@@ -337,7 +337,7 @@ const Index = () => {
   });
 
   const summonBotMutation = useMutation({
-    mutationFn: voxariaApi.summonBot,
+    mutationFn: ({ guildId }: { guildId: string }) => voxariaApi.summonBot(guildId),
     onSuccess: () => toast({ title: "Summon sent", description: "Voxaria join request sent." }),
     onError: () => toast({ title: "Summon failed", description: "Could not send join request.", variant: "destructive" }),
   });
@@ -966,7 +966,7 @@ const Index = () => {
               <Button
                 className="h-10 rounded-md neon-glow"
                 disabled={summonBotMutation.isPending}
-                onClick={() => summonBotMutation.mutate()}
+                onClick={() => summonBotMutation.mutate({ guildId: activeGuildId })}
               >
                 {summonBotMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Summon Bot"}
               </Button>
