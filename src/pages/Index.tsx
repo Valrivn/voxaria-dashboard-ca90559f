@@ -51,6 +51,7 @@ import { AuditLogViewer } from "@/components/AuditLogViewer";
 import {
   mockData,
   voxariaApi,
+  type ApiKaraokeResponse,
   type ApiLyrics,
   type ApiPitchMap,
   type ApiPreset,
@@ -213,6 +214,9 @@ const Index = () => {
   const [playlistName, setPlaylistName] = useState("My Playlist");
   const [customPlaylists, setCustomPlaylists] = useState<Record<string, ApiSearchResult[]>>({});
   const [activePlaylist, setActivePlaylist] = useState("My Playlist");
+  const [isFetchingLyrics, setIsFetchingLyrics] = useState(false);
+  const [isGeneratingKaraoke, setIsGeneratingKaraoke] = useState(false);
+  const [currentPitchMap, setCurrentPitchMap] = useState<ApiPitchMap | null>(null);
 
   const animationFrameRef = useRef<number | null>(null);
   const karaokeAnimationRef = useRef<number | null>(null);
@@ -407,61 +411,74 @@ const Index = () => {
     onError: () => toast({ title: "Shuffle failed", description: "Could not shuffle queue.", variant: "destructive" }),
   });
 
-  const lyricsMutation = useMutation({
-    mutationFn: async ({ title, artist }: { title: string; artist: string }) => voxariaApi.getLyrics(title, artist),
-    onSuccess: (data) => {
-      if (!data.lines?.length) {
-        setLyricsData(null);
-        setLyricsUnavailable(true);
-        setActiveLine(0);
-        return;
-      }
-
-      setLyricsUnavailable(false);
-      setLyricsData(data);
-      setActiveLine(0);
-      toast({ title: "Lyrics synced", description: "Live lyrics loaded." });
-    },
-    onError: () => {
-      setLyricsData(null);
-      setLyricsUnavailable(true);
-      setActiveLine(0);
-      toast({ title: "Service Unavailable", description: "Lyrics service is currently unreachable." });
-    },
-  });
-
   const currentTrack = useMemo(
     () => ({
       title: (player.data?.title ?? "").trim(),
       artist: (player.data?.artist ?? "").trim(),
+      url: (player.data?.url ?? "").trim(),
     }),
-    [player.data?.title, player.data?.artist],
+    [player.data?.title, player.data?.artist, player.data?.url],
   );
 
   const currentTrackKey = `${currentTrack.title}::${currentTrack.artist}`;
   const normalizedLyrics = useMemo(() => (lyricsData?.lines ?? []).map(parseLyricLine).filter((line) => line.text.length > 0), [lyricsData?.lines]);
-  const pitchMap = useQuery({
-    queryKey: ["pitch-map", currentTrackKey],
-    enabled: Boolean(currentTrack.title || currentTrack.artist),
-    queryFn: () => voxariaApi.getPitchMap(currentTrack.title, currentTrack.artist),
-    refetchInterval: 30000,
-  });
-  const currentPitchMap = useMemo<ApiPitchMap | null>(() => {
-    if (!pitchMap.data?.frames?.length) return null;
-    return pitchMap.data;
-  }, [pitchMap.data]);
   const resolvedPlaylistTracks = customPlaylists[activePlaylist] ?? [];
 
   useEffect(() => {
-    if (!currentTrack.title && !currentTrack.artist) {
-      setLyricsData(null);
-      setLyricsUnavailable(true);
-      setActiveLine(0);
+    setLyricsData(null);
+    setLyricsUnavailable(false);
+    setActiveLine(0);
+    setCurrentPitchMap(null);
+  }, [currentTrackKey]);
+
+  const coercePitchMap = (payload: ApiKaraokeResponse): ApiPitchMap | null => {
+    const candidate = payload.pitchMap ?? payload;
+    if (!candidate?.frames?.length) return null;
+    return {
+      title: candidate.title ?? currentTrack.title,
+      artist: candidate.artist ?? currentTrack.artist,
+      frames: candidate.frames,
+    };
+  };
+
+  const refreshLyrics = async () => {
+    if (!currentTrack.title) {
+      toast({ title: "No track playing", description: "Wait for a track before refreshing lyrics.", variant: "destructive" });
       return;
     }
 
-    lyricsMutation.mutate({ title: currentTrack.title, artist: currentTrack.artist });
-  }, [currentTrackKey]);
+    setIsFetchingLyrics(true);
+    try {
+      const response = await voxariaApi.fetchLyrics(currentTrack.title);
+      const lyricsText = response?.lyrics?.trim();
+
+      if (!lyricsText) {
+        setLyricsData(null);
+        setLyricsUnavailable(true);
+        setActiveLine(0);
+        toast({ title: "Failed to find lyrics", variant: "destructive" });
+        return;
+      }
+
+      setLyricsData({
+        title: currentTrack.title,
+        artist: currentTrack.artist || "Unknown artist",
+        source: "On-demand",
+        lines: lyricsText.split(/\r?\n/).filter((line) => line.trim().length > 0),
+      });
+      setLyricsUnavailable(false);
+      setActiveLine(0);
+      toast({ title: "Lyrics synced", description: "Lyrics refreshed successfully." });
+    } catch (error) {
+      console.error("Refresh lyrics failed:", error);
+      setLyricsData(null);
+      setLyricsUnavailable(true);
+      setActiveLine(0);
+      toast({ title: "Failed to find lyrics", variant: "destructive" });
+    } finally {
+      setIsFetchingLyrics(false);
+    }
+  };
 
   useEffect(() => {
     activeLineRef.current = activeLine;
