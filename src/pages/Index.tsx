@@ -51,6 +51,7 @@ import { AuditLogViewer } from "@/components/AuditLogViewer";
 import {
   mockData,
   voxariaApi,
+  type ApiKaraokeResponse,
   type ApiLyrics,
   type ApiPitchMap,
   type ApiPreset,
@@ -213,6 +214,9 @@ const Index = () => {
   const [playlistName, setPlaylistName] = useState("My Playlist");
   const [customPlaylists, setCustomPlaylists] = useState<Record<string, ApiSearchResult[]>>({});
   const [activePlaylist, setActivePlaylist] = useState("My Playlist");
+  const [isFetchingLyrics, setIsFetchingLyrics] = useState(false);
+  const [isGeneratingKaraoke, setIsGeneratingKaraoke] = useState(false);
+  const [currentPitchMap, setCurrentPitchMap] = useState<ApiPitchMap | null>(null);
 
   const animationFrameRef = useRef<number | null>(null);
   const karaokeAnimationRef = useRef<number | null>(null);
@@ -407,61 +411,74 @@ const Index = () => {
     onError: () => toast({ title: "Shuffle failed", description: "Could not shuffle queue.", variant: "destructive" }),
   });
 
-  const lyricsMutation = useMutation({
-    mutationFn: async ({ title, artist }: { title: string; artist: string }) => voxariaApi.getLyrics(title, artist),
-    onSuccess: (data) => {
-      if (!data.lines?.length) {
-        setLyricsData(null);
-        setLyricsUnavailable(true);
-        setActiveLine(0);
-        return;
-      }
-
-      setLyricsUnavailable(false);
-      setLyricsData(data);
-      setActiveLine(0);
-      toast({ title: "Lyrics synced", description: "Live lyrics loaded." });
-    },
-    onError: () => {
-      setLyricsData(null);
-      setLyricsUnavailable(true);
-      setActiveLine(0);
-      toast({ title: "Service Unavailable", description: "Lyrics service is currently unreachable." });
-    },
-  });
-
   const currentTrack = useMemo(
     () => ({
       title: (player.data?.title ?? "").trim(),
       artist: (player.data?.artist ?? "").trim(),
+      url: (player.data?.url ?? "").trim(),
     }),
-    [player.data?.title, player.data?.artist],
+    [player.data?.title, player.data?.artist, player.data?.url],
   );
 
   const currentTrackKey = `${currentTrack.title}::${currentTrack.artist}`;
   const normalizedLyrics = useMemo(() => (lyricsData?.lines ?? []).map(parseLyricLine).filter((line) => line.text.length > 0), [lyricsData?.lines]);
-  const pitchMap = useQuery({
-    queryKey: ["pitch-map", currentTrackKey],
-    enabled: Boolean(currentTrack.title || currentTrack.artist),
-    queryFn: () => voxariaApi.getPitchMap(currentTrack.title, currentTrack.artist),
-    refetchInterval: 30000,
-  });
-  const currentPitchMap = useMemo<ApiPitchMap | null>(() => {
-    if (!pitchMap.data?.frames?.length) return null;
-    return pitchMap.data;
-  }, [pitchMap.data]);
   const resolvedPlaylistTracks = customPlaylists[activePlaylist] ?? [];
 
   useEffect(() => {
-    if (!currentTrack.title && !currentTrack.artist) {
-      setLyricsData(null);
-      setLyricsUnavailable(true);
-      setActiveLine(0);
+    setLyricsData(null);
+    setLyricsUnavailable(false);
+    setActiveLine(0);
+    setCurrentPitchMap(null);
+  }, [currentTrackKey]);
+
+  const coercePitchMap = (payload: ApiKaraokeResponse): ApiPitchMap | null => {
+    const candidate = payload.pitchMap ?? payload;
+    if (!candidate?.frames?.length) return null;
+    return {
+      title: candidate.title ?? currentTrack.title,
+      artist: candidate.artist ?? currentTrack.artist,
+      frames: candidate.frames,
+    };
+  };
+
+  const refreshLyrics = async () => {
+    if (!currentTrack.title) {
+      toast({ title: "No track playing", description: "Wait for a track before refreshing lyrics.", variant: "destructive" });
       return;
     }
 
-    lyricsMutation.mutate({ title: currentTrack.title, artist: currentTrack.artist });
-  }, [currentTrackKey]);
+    setIsFetchingLyrics(true);
+    try {
+      const response = await voxariaApi.fetchLyrics(currentTrack.title);
+      const lyricsText = response?.lyrics?.trim();
+
+      if (!lyricsText) {
+        setLyricsData(null);
+        setLyricsUnavailable(true);
+        setActiveLine(0);
+        toast({ title: "Failed to find lyrics", variant: "destructive" });
+        return;
+      }
+
+      setLyricsData({
+        title: currentTrack.title,
+        artist: currentTrack.artist || "Unknown artist",
+        source: "On-demand",
+        lines: lyricsText.split(/\r?\n/).filter((line) => line.trim().length > 0),
+      });
+      setLyricsUnavailable(false);
+      setActiveLine(0);
+      toast({ title: "Lyrics synced", description: "Lyrics refreshed successfully." });
+    } catch (error) {
+      console.error("Refresh lyrics failed:", error);
+      setLyricsData(null);
+      setLyricsUnavailable(true);
+      setActiveLine(0);
+      toast({ title: "Failed to find lyrics", variant: "destructive" });
+    } finally {
+      setIsFetchingLyrics(false);
+    }
+  };
 
   useEffect(() => {
     activeLineRef.current = activeLine;
@@ -557,7 +574,7 @@ const Index = () => {
   const loading = queue.isLoading || status.isLoading || cache.isLoading || settings.isLoading || player.isLoading;
   const playerUnavailable = player.isError;
   const queueUnavailable = queue.isError;
-  const lyricsServiceUnavailable = lyricsMutation.isError;
+  const lyricsServiceUnavailable = false;
   const canManageQueue = Boolean(currentUser?.permissions.dj || currentUser?.permissions.staff);
   const canViewStaffTab = (currentUser?.roleLevel ?? 0) >= 2;
   const manageableUsers = useMemo(
@@ -657,7 +674,24 @@ const Index = () => {
   };
 
   const startKaraoke = async () => {
+    if (isGeneratingKaraoke) return;
+    if (!activeGuildId || !currentTrack.url) {
+      toast({
+        title: "Karaoke unavailable",
+        description: "Current track URL is missing, so karaoke processing cannot start.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGeneratingKaraoke(true);
     try {
+      const karaokePayload = await voxariaApi.startKaraoke(activeGuildId, currentTrack.url);
+      const nextPitchMap = coercePitchMap(karaokePayload);
+      if (!nextPitchMap) throw new Error("Pitch map unavailable");
+
+      setCurrentPitchMap(nextPitchMap);
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const audioContext = new AudioContext();
       const source = audioContext.createMediaStreamSource(stream);
@@ -683,9 +717,12 @@ const Index = () => {
       karaokeMaxComboRef.current = 0;
       karaokeStartTimeRef.current = Date.now();
       setScoreSummaryOpen(false);
-      toast({ title: "Karaoke enabled", description: "Mic input connected." });
-    } catch {
-      toast({ title: "Mic unavailable", description: "Allow microphone access to start karaoke mode.", variant: "destructive" });
+      toast({ title: "Karaoke ready", description: "Pitch map generated and karaoke mode started." });
+    } catch (error) {
+      console.error("Start karaoke failed:", error);
+      toast({ title: "Karaoke failed", description: "Could not generate karaoke pitch map.", variant: "destructive" });
+    } finally {
+      setIsGeneratingKaraoke(false);
     }
   };
 
@@ -856,10 +893,10 @@ const Index = () => {
               <Button
                 variant="outline"
                 className="border-primary/55 text-primary hover:bg-accent/40"
-                onClick={() => lyricsMutation.mutate({ title: currentTrack.title, artist: currentTrack.artist })}
-                disabled={lyricsMutation.isPending || (!currentTrack.title && !currentTrack.artist)}
+                onClick={() => void refreshLyrics()}
+                disabled={isFetchingLyrics || !currentTrack.title}
               >
-                Refresh Lyrics
+                {isFetchingLyrics ? <Loader2 className="h-4 w-4 animate-spin" /> : "Refresh Lyrics"}
               </Button>
             </div>
 
@@ -994,17 +1031,18 @@ const Index = () => {
                       variant={karaokeEnabled ? "secondary" : "outline"}
                       className="border-primary/55 text-primary hover:bg-accent/40"
                       onClick={() => (karaokeEnabled ? stopKaraoke() : void startKaraoke())}
+                      disabled={isGeneratingKaraoke}
                     >
-                      {karaokeEnabled ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                      {karaokeEnabled ? "Stop Karaoke" : "Start Karaoke"}
+                      {isGeneratingKaraoke ? <Loader2 className="h-4 w-4 animate-spin" /> : karaokeEnabled ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                      {isGeneratingKaraoke ? "Processing..." : karaokeEnabled ? "Stop Karaoke" : "Start Karaoke"}
                     </Button>
                     <Button
                     variant="outline"
                     className="border-primary/55 text-primary hover:bg-accent/40"
-                    onClick={() => lyricsMutation.mutate({ title: currentTrack.title, artist: currentTrack.artist })}
-                    disabled={lyricsMutation.isPending || (!currentTrack.title && !currentTrack.artist)}
+                    onClick={() => void refreshLyrics()}
+                    disabled={isFetchingLyrics || !currentTrack.title}
                   >
-                    Refresh Lyrics
+                    {isFetchingLyrics ? <Loader2 className="h-4 w-4 animate-spin" /> : "Refresh Lyrics"}
                   </Button>
                   </div>
                 </div>
