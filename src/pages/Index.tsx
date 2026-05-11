@@ -574,7 +574,7 @@ const Index = () => {
   const loading = queue.isLoading || status.isLoading || cache.isLoading || settings.isLoading || player.isLoading;
   const playerUnavailable = player.isError;
   const queueUnavailable = queue.isError;
-  const lyricsServiceUnavailable = lyricsMutation.isError;
+  const lyricsServiceUnavailable = false;
   const canManageQueue = Boolean(currentUser?.permissions.dj || currentUser?.permissions.staff);
   const canViewStaffTab = (currentUser?.roleLevel ?? 0) >= 2;
   const manageableUsers = useMemo(
@@ -674,7 +674,24 @@ const Index = () => {
   };
 
   const startKaraoke = async () => {
+    if (isGeneratingKaraoke) return;
+    if (!activeGuildId || !currentTrack.url) {
+      toast({
+        title: "Karaoke unavailable",
+        description: "Current track URL is missing, so karaoke processing cannot start.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGeneratingKaraoke(true);
     try {
+      const karaokePayload = await voxariaApi.startKaraoke(activeGuildId, currentTrack.url);
+      const nextPitchMap = coercePitchMap(karaokePayload);
+      if (!nextPitchMap) throw new Error("Pitch map unavailable");
+
+      setCurrentPitchMap(nextPitchMap);
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const audioContext = new AudioContext();
       const source = audioContext.createMediaStreamSource(stream);
@@ -700,9 +717,12 @@ const Index = () => {
       karaokeMaxComboRef.current = 0;
       karaokeStartTimeRef.current = Date.now();
       setScoreSummaryOpen(false);
-      toast({ title: "Karaoke enabled", description: "Mic input connected." });
-    } catch {
-      toast({ title: "Mic unavailable", description: "Allow microphone access to start karaoke mode.", variant: "destructive" });
+      toast({ title: "Karaoke ready", description: "Pitch map generated and karaoke mode started." });
+    } catch (error) {
+      console.error("Start karaoke failed:", error);
+      toast({ title: "Karaoke failed", description: "Could not generate karaoke pitch map.", variant: "destructive" });
+    } finally {
+      setIsGeneratingKaraoke(false);
     }
   };
 
