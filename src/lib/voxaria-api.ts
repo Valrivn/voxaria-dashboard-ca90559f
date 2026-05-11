@@ -114,27 +114,65 @@ const ENDPOINTS = {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!BASE_URL) throw new Error("Set VITE_VOXARIA_API_BASE_URL to enable live API mode.");
 
-  const extraHeaders = new Headers(init?.headers);
+  try {
+    const extraHeaders = new Headers(init?.headers);
 
-  const response = await fetch(`${BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      "ngrok-skip-browser-warning": "true",
-      "x-user-id": OWNER_USER_ID,
-      "x-api-key": OWNER_API_KEY,
-      ...Object.fromEntries(extraHeaders.entries()),
-    },
-  });
+    const response = await fetch(`${BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true",
+        "x-user-id": OWNER_USER_ID,
+        "x-api-key": OWNER_API_KEY,
+        ...Object.fromEntries(extraHeaders.entries()),
+      },
+    });
 
-  if (!response.ok) {
-    const body = await response.text();
-    console.log("Backend request failed:", body || response.statusText);
-    throw new Error(`API ${response.status}: ${body || "unknown error"}`);
+    if (!response.ok) {
+      const body = await response.text();
+      console.error(`API Error: ${response.status} - ${body || response.statusText}`);
+      throw new Error(`API ${response.status}: ${body || "unknown error"}`);
+    }
+
+    if (response.status === 204) return {} as T;
+    return response.json() as Promise<T>;
+  } catch (error) {
+    console.error("Fetch failed:", error);
+    throw error;
   }
+}
 
-  if (response.status === 204) return {} as T;
-  return response.json() as Promise<T>;
+async function postJson<TResponse, TBody extends Record<string, unknown>>(
+  path: string,
+  body: TBody,
+  guildId: string,
+  userId?: string,
+): Promise<TResponse> {
+  try {
+    const response = await fetch(`${BASE_URL}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true",
+        "x-user-id": userId?.trim() || OWNER_USER_ID,
+        "x-guild-id": guildId,
+        "x-api-key": OWNER_API_KEY,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({} as { error?: string }));
+      const fallbackMessage = typeof err === "object" && err && "error" in err ? String(err.error) : response.statusText;
+      console.error(`API Error: ${response.status} - ${fallbackMessage}`);
+      throw new Error(fallbackMessage || "Network response was not ok");
+    }
+
+    return response.json() as Promise<TResponse>;
+  } catch (error) {
+    console.error("Fetch failed:", error);
+    throw error;
+  }
 }
 
 const cleanLyricsTitle = (title: string) =>
@@ -153,42 +191,25 @@ export const voxariaApi = {
   getCache: () => request<ApiCache>(ENDPOINTS.cache),
   getSettings: () => request<ApiSettings>(ENDPOINTS.settings),
   getPlayer: () => request<ApiPlayer>(ENDPOINTS.player),
-  search: async (query: string, guildId: string) => {
-    const endpoint = "/music/search";
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "ngrok-skip-browser-warning": "true",
-        "x-user-id": OWNER_USER_ID,
-        "x-api-key": OWNER_API_KEY,
-      },
-      body: JSON.stringify({
-        query,
-        guildId,
-      }),
-    });
-
-    if (!response.ok) {
-      let errorMessage = "Failed to request music";
-
-      try {
-        const errorData = await response.json();
-        errorMessage = errorData?.error || errorMessage;
-      } catch {
-        const rawBody = await response.text();
-        if (rawBody) errorMessage = rawBody;
-      }
-
-      throw new Error(errorMessage);
-    }
-
-    return response.json() as Promise<{ ok: boolean; queued?: number }>;
-  },
+  search: (query: string, guildId: string, userId?: string) =>
+    postJson<{ ok: boolean; queued?: number }, { query: string; guildId: string }>(
+      "/music/search",
+      { query, guildId },
+      guildId,
+      userId,
+    ),
+  requestSong: (query: string, guildId: string, userId?: string) =>
+    postJson<{ ok: boolean; queued?: number }, { query: string; guildId: string }>(
+      "/music/request",
+      { query, guildId },
+      guildId,
+      userId,
+    ),
   playback: (action: PlaybackAction) =>
     request<{ ok: boolean }>(ENDPOINTS.playback, { method: "POST", body: JSON.stringify({ action }) }),
   clearQueue: () => request<{ ok: boolean }>(ENDPOINTS.clearQueue, { method: "POST" }),
-  summonBot: () => request<{ ok: boolean }>(ENDPOINTS.join, { method: "POST" }),
+  summonBot: (guildId: string, userId?: string) =>
+    postJson<{ ok: boolean; message?: string }, { guildId: string }>(ENDPOINTS.join, { guildId }, guildId, userId),
   leaveVoice: () => request<{ ok: boolean }>(ENDPOINTS.leave, { method: "POST" }),
   cleanAudioCache: () => request<{ ok: boolean; removedMb?: number }>(ENDPOINTS.cleanCache, { method: "POST" }),
   setSessionRestore: (enabled: boolean) =>
