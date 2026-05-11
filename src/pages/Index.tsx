@@ -893,10 +893,10 @@ const Index = () => {
               <Button
                 variant="outline"
                 className="border-primary/55 text-primary hover:bg-accent/40"
-                onClick={() => lyricsMutation.mutate({ title: currentTrack.title, artist: currentTrack.artist })}
-                disabled={lyricsMutation.isPending || (!currentTrack.title && !currentTrack.artist)}
+                onClick={() => void refreshLyrics()}
+                disabled={isFetchingLyrics || !currentTrack.title}
               >
-                Refresh Lyrics
+                {isFetchingLyrics ? <Loader2 className="h-4 w-4 animate-spin" /> : "Refresh Lyrics"}
               </Button>
             </div>
 
@@ -1031,17 +1031,18 @@ const Index = () => {
                       variant={karaokeEnabled ? "secondary" : "outline"}
                       className="border-primary/55 text-primary hover:bg-accent/40"
                       onClick={() => (karaokeEnabled ? stopKaraoke() : void startKaraoke())}
+                      disabled={isGeneratingKaraoke}
                     >
-                      {karaokeEnabled ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                      {karaokeEnabled ? "Stop Karaoke" : "Start Karaoke"}
+                      {isGeneratingKaraoke ? <Loader2 className="h-4 w-4 animate-spin" /> : karaokeEnabled ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                      {isGeneratingKaraoke ? "Processing..." : karaokeEnabled ? "Stop Karaoke" : "Start Karaoke"}
                     </Button>
                     <Button
                     variant="outline"
                     className="border-primary/55 text-primary hover:bg-accent/40"
-                    onClick={() => lyricsMutation.mutate({ title: currentTrack.title, artist: currentTrack.artist })}
-                    disabled={lyricsMutation.isPending || (!currentTrack.title && !currentTrack.artist)}
+                    onClick={() => void refreshLyrics()}
+                    disabled={isFetchingLyrics || !currentTrack.title}
                   >
-                    Refresh Lyrics
+                    {isFetchingLyrics ? <Loader2 className="h-4 w-4 animate-spin" /> : "Refresh Lyrics"}
                   </Button>
                   </div>
                 </div>
