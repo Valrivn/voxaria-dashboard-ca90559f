@@ -268,12 +268,17 @@ const Index = () => {
     queryKey: ["player"],
     queryFn: async () => {
       const startedAt = Date.now();
-      const data = await voxariaApi.getPlayer();
-      const elapsed = Math.max(0, Date.now() - startedAt);
-      setRttCompensationMs(elapsed / 2);
-      return data;
+      try {
+        const data = await voxariaApi.getPlayer();
+        const elapsed = Math.max(0, Date.now() - startedAt);
+        setRttCompensationMs(elapsed / 2);
+        return data;
+      } catch (error) {
+        console.error("Player polling failed:", error);
+        throw error;
+      }
     },
-    refetchInterval: 5000,
+    refetchInterval: 1000,
   });
   const presets = useQuery({ queryKey: ["presets"], queryFn: voxariaApi.getPresets, refetchInterval: 30000 });
   const activeGuildId = useMemo(() => {
@@ -1523,7 +1528,7 @@ const Index = () => {
                 <SkipBack className="h-4 w-4" />
               </Button>
               <Button size="icon" className="h-12 w-12 rounded-full neon-glow" onClick={() => playbackMutation.mutate("play_pause")}>
-                {player.data?.playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                {player.data?.isPaused === false ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
               </Button>
               <Button size="icon" variant="secondary" className="border border-primary/35 text-primary hover:bg-accent/35" onClick={() => playbackMutation.mutate("next")}>
                 <SkipForward className="h-4 w-4" />
