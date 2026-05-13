@@ -49,6 +49,12 @@ type RawPlayerPayload = {
   [key: string]: unknown;
 };
 
+type RawQueuePayload = {
+  success?: boolean;
+  data?: unknown;
+  [key: string]: unknown;
+};
+
 export type ApiPreset = {
   id?: string;
   name: string;
@@ -222,6 +228,24 @@ const normalizePlayerPayload = (payload: RawPlayerPayload): ApiPlayer => {
   };
 };
 
+const normalizeQueuePayload = (payload: RawQueuePayload): ApiTrack[] => {
+  const list = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
+  return list.map((item, index) => {
+    const track = (item ?? {}) as Record<string, unknown>;
+    const requesterName = (track.requesterName ?? track.requestedBy ?? "Unknown") as string;
+    return {
+      id: String(track.id ?? index),
+      title: String(track.title ?? "Unknown title"),
+      artist: String(track.artist ?? "Unknown artist"),
+      duration: (track.duration as string | number | undefined) ?? 0,
+      requestedBy: requesterName,
+      requesterName,
+      requesterAvatar: (track.requesterAvatar as string | undefined) ?? undefined,
+      art: ((track.thumbnail as string | undefined) ?? (track.art as string | undefined) ?? undefined),
+    };
+  });
+};
+
 async function postJson<TResponse, TBody extends Record<string, unknown>>(
   path: string,
   body: TBody,
@@ -265,7 +289,10 @@ const cleanLyricsTitle = (title: string) =>
     .trim();
 
 export const voxariaApi = {
-  getQueue: () => request<ApiTrack[]>(ENDPOINTS.queue),
+  getQueue: async () => {
+    const payload = await request<RawQueuePayload>(ENDPOINTS.queue);
+    return normalizeQueuePayload(payload);
+  },
   getHistory: () => request<ApiTrack[]>(ENDPOINTS.history),
   getStatus: () => request<ApiStatus>(ENDPOINTS.status),
   getCache: () => request<ApiCache>(ENDPOINTS.cache),
