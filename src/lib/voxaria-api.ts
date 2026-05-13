@@ -3,7 +3,8 @@ export type ApiTrack = {
   title: string;
   artist: string;
   duration: string | number;
-  requestedBy: string;
+  requestedBy?: string;
+  requesterName?: string;
   requesterAvatar?: string;
   art?: string;
 };
@@ -28,12 +29,16 @@ export type ApiPlayer = {
   title: string | null;
   artist: string | null;
   url?: string | null;
+  trackUrl?: string | null;
   durationSec: number;
   positionSec: number;
   startTime?: number | null;
   lastPausedAt?: number | null;
   isPaused?: boolean;
   playing: boolean;
+  requesterName?: string | null;
+  requesterAvatar?: string | null;
+  thumbnail?: string | null;
   art?: string;
   volume: number;
 };
@@ -201,14 +206,18 @@ const normalizePlayerPayload = (payload: RawPlayerPayload): ApiPlayer => {
   return {
     title: (pick<string | null>("title", data, root) ?? null) as string | null,
     artist: (pick<string | null>("artist", data, root) ?? null) as string | null,
-    url: (pick<string | null>("url", data, root) ?? null) as string | null,
+    trackUrl: (pick<string | null>("trackUrl", data, root) ?? null) as string | null,
+    url: ((pick<string | null>("trackUrl", data, root) ?? pick<string | null>("url", data, root) ?? null) as string | null),
     durationSec: Math.max(0, durationSec),
     positionSec: Math.max(0, positionSec),
     startTime: (pick<number | null>("startTime", data, root) ?? null) as number | null,
     lastPausedAt: (pick<number | null>("lastPausedAt", data, root) ?? null) as number | null,
     isPaused,
     playing,
-    art: (pick<string | undefined>("art", data, root) ?? undefined) as string | undefined,
+    requesterName: (pick<string | null>("requesterName", data, root) ?? pick<string | null>("requestedBy", data, root) ?? null) as string | null,
+    requesterAvatar: (pick<string | null>("requesterAvatar", data, root) ?? null) as string | null,
+    thumbnail: (pick<string | null>("thumbnail", data, root) ?? pick<string | null>("art", data, root) ?? null) as string | null,
+    art: (pick<string | undefined>("thumbnail", data, root) ?? pick<string | undefined>("art", data, root) ?? undefined) as string | undefined,
     volume: Math.max(0, Math.min(200, toNumber(pick("volume", data, root)) ?? 100)),
   };
 };
