@@ -93,11 +93,6 @@ const formatSec = (s: number) => {
   return `${m}:${sec}`;
 };
 
-const formatTrackDuration = (duration: ApiTrack["duration"]) => {
-  if (typeof duration === "number") return formatSec(duration);
-  return duration;
-};
-
 const formatMsToClock = (value: number | undefined) => {
   if (!Number.isFinite(value) || !value || value < 0) return "0:00";
   const totalSec = Math.floor(value / 1000);
