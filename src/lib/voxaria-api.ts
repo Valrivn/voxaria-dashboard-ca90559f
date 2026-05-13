@@ -1,11 +1,14 @@
 export type ApiTrack = {
   id: string;
   title: string;
+  author?: string;
   artist: string;
+  length?: number;
   duration: string | number;
   requestedBy?: string;
   requesterName?: string;
   requesterAvatar?: string;
+  artworkUrl?: string;
   art?: string;
 };
 
@@ -233,15 +236,29 @@ const normalizeQueuePayload = (payload: RawQueuePayload): ApiTrack[] => {
   return list.map((item, index) => {
     const track = (item ?? {}) as Record<string, unknown>;
     const requesterName = (track.requesterName ?? track.requestedBy ?? "Unknown") as string;
+    const title = String(track.title ?? "Unknown title");
+    const author = typeof track.author === "string" && track.author.trim().length > 0
+      ? track.author.trim()
+      : String(track.artist ?? "Unknown artist");
+    const artworkUrl = (track.artworkUrl as string | undefined) ?? (track.thumbnail as string | undefined) ?? (track.art as string | undefined) ?? undefined;
+    const length = typeof track.length === "number" && Number.isFinite(track.length)
+      ? track.length
+      : typeof track.duration === "number" && Number.isFinite(track.duration)
+        ? track.duration
+        : undefined;
+
     return {
       id: String(track.id ?? index),
-      title: String(track.title ?? "Unknown title"),
-      artist: String(track.artist ?? "Unknown artist"),
+      title,
+      author,
+      artist: author,
+      length,
       duration: (track.duration as string | number | undefined) ?? 0,
       requestedBy: requesterName,
       requesterName,
       requesterAvatar: (track.requesterAvatar as string | undefined) ?? undefined,
-      art: ((track.thumbnail as string | undefined) ?? (track.art as string | undefined) ?? undefined),
+      artworkUrl,
+      art: artworkUrl,
     };
   });
 };
