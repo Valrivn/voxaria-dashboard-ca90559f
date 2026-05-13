@@ -1,14 +1,10 @@
 export type ApiTrack = {
   id: string;
   title: string;
-  author?: string;
   artist: string;
-  length?: number;
   duration: string | number;
-  requestedBy?: string;
-  requesterName?: string;
+  requestedBy: string;
   requesterAvatar?: string;
-  artworkUrl?: string;
   art?: string;
 };
 
@@ -32,16 +28,12 @@ export type ApiPlayer = {
   title: string | null;
   artist: string | null;
   url?: string | null;
-  trackUrl?: string | null;
   durationSec: number;
   positionSec: number;
   startTime?: number | null;
   lastPausedAt?: number | null;
   isPaused?: boolean;
   playing: boolean;
-  requesterName?: string | null;
-  requesterAvatar?: string | null;
-  thumbnail?: string | null;
   art?: string;
   volume: number;
 };
@@ -49,12 +41,6 @@ export type ApiPlayer = {
 type RawPlayerPayload = {
   success?: boolean;
   data?: Record<string, unknown>;
-  [key: string]: unknown;
-};
-
-type RawQueuePayload = {
-  success?: boolean;
-  data?: unknown;
   [key: string]: unknown;
 };
 
@@ -112,7 +98,8 @@ export type ApiAuditTrack = {
 
 type PlaybackAction = "previous" | "play_pause" | "next" | "stop";
 
-export const BASE_URL = import.meta.env.VITE_VOXARIA_API_BASE_URL?.trim() || "https://unhitched-shrink-dorsal.ngrok-free.dev";
+export const BASE_URL =
+  import.meta.env.VITE_VOXARIA_API_BASE_URL?.trim() || "https://picks-lightweight-hang-medication.trycloudflare.com";
 const OWNER_USER_ID = "owner";
 const OWNER_API_KEY = "owner";
 const ENDPOINTS = {
@@ -192,7 +179,11 @@ const toBoolean = (value: unknown): boolean | null => {
   return null;
 };
 
-const pick = <T = unknown>(key: string, data: Record<string, unknown>, root: Record<string, unknown>): T | undefined => {
+const pick = <T = unknown,>(
+  key: string,
+  data: Record<string, unknown>,
+  root: Record<string, unknown>,
+): T | undefined => {
   if (data[key] !== undefined) return data[key] as T;
   if (root[key] !== undefined) return root[key] as T;
   return undefined;
@@ -207,60 +198,24 @@ const normalizePlayerPayload = (payload: RawPlayerPayload): ApiPlayer => {
   const durationMs = toNumber(pick("duration", data, root));
   const totalTimeSec = toNumber(pick("totalTime", data, root));
 
-  const positionSec = positionMs !== null ? positionMs / 1000 : currentTimeSec ?? 0;
-  const durationSec = durationMs !== null ? durationMs / 1000 : totalTimeSec ?? 0;
+  const positionSec = positionMs !== null ? positionMs / 1000 : (currentTimeSec ?? 0);
+  const durationSec = durationMs !== null ? durationMs / 1000 : (totalTimeSec ?? 0);
   const isPaused = toBoolean(pick("paused", data, root)) ?? toBoolean(pick("isPaused", data, root)) ?? false;
   const playing = toBoolean(pick("playing", data, root)) ?? false;
 
   return {
     title: (pick<string | null>("title", data, root) ?? null) as string | null,
     artist: (pick<string | null>("artist", data, root) ?? null) as string | null,
-    trackUrl: (pick<string | null>("trackUrl", data, root) ?? null) as string | null,
-    url: ((pick<string | null>("trackUrl", data, root) ?? pick<string | null>("url", data, root) ?? null) as string | null),
+    url: (pick<string | null>("url", data, root) ?? null) as string | null,
     durationSec: Math.max(0, durationSec),
     positionSec: Math.max(0, positionSec),
     startTime: (pick<number | null>("startTime", data, root) ?? null) as number | null,
     lastPausedAt: (pick<number | null>("lastPausedAt", data, root) ?? null) as number | null,
     isPaused,
     playing,
-    requesterName: (pick<string | null>("requesterName", data, root) ?? pick<string | null>("requestedBy", data, root) ?? null) as string | null,
-    requesterAvatar: (pick<string | null>("requesterAvatar", data, root) ?? null) as string | null,
-    thumbnail: (pick<string | null>("thumbnail", data, root) ?? pick<string | null>("art", data, root) ?? null) as string | null,
-    art: (pick<string | undefined>("thumbnail", data, root) ?? pick<string | undefined>("art", data, root) ?? undefined) as string | undefined,
+    art: (pick<string | undefined>("art", data, root) ?? undefined) as string | undefined,
     volume: Math.max(0, Math.min(200, toNumber(pick("volume", data, root)) ?? 100)),
   };
-};
-
-const normalizeQueuePayload = (payload: RawQueuePayload): ApiTrack[] => {
-  const list = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
-  return list.map((item, index) => {
-    const track = (item ?? {}) as Record<string, unknown>;
-    const requesterName = (track.requesterName ?? track.requestedBy ?? "Unknown") as string;
-    const title = String(track.title ?? "Unknown title");
-    const author = typeof track.author === "string" && track.author.trim().length > 0
-      ? track.author.trim()
-      : String(track.artist ?? "Unknown artist");
-    const artworkUrl = (track.artworkUrl as string | undefined) ?? (track.thumbnail as string | undefined) ?? (track.art as string | undefined) ?? undefined;
-    const length = typeof track.length === "number" && Number.isFinite(track.length)
-      ? track.length
-      : typeof track.duration === "number" && Number.isFinite(track.duration)
-        ? track.duration
-        : undefined;
-
-    return {
-      id: String(track.id ?? index),
-      title,
-      author,
-      artist: author,
-      length,
-      duration: (track.duration as string | number | undefined) ?? 0,
-      requestedBy: requesterName,
-      requesterName,
-      requesterAvatar: (track.requesterAvatar as string | undefined) ?? undefined,
-      artworkUrl,
-      art: artworkUrl,
-    };
-  });
 };
 
 async function postJson<TResponse, TBody extends Record<string, unknown>>(
@@ -283,8 +238,9 @@ async function postJson<TResponse, TBody extends Record<string, unknown>>(
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({} as { error?: string }));
-      const fallbackMessage = typeof err === "object" && err && "error" in err ? String(err.error) : response.statusText;
+      const err = await response.json().catch(() => ({}) as { error?: string });
+      const fallbackMessage =
+        typeof err === "object" && err && "error" in err ? String(err.error) : response.statusText;
       console.error(`API Error: ${response.status} - ${fallbackMessage}`);
       throw new Error(fallbackMessage || "Network response was not ok");
     }
@@ -306,10 +262,7 @@ const cleanLyricsTitle = (title: string) =>
     .trim();
 
 export const voxariaApi = {
-  getQueue: async () => {
-    const payload = await request<RawQueuePayload>(ENDPOINTS.queue);
-    return normalizeQueuePayload(payload);
-  },
+  getQueue: () => request<ApiTrack[]>(ENDPOINTS.queue),
   getHistory: () => request<ApiTrack[]>(ENDPOINTS.history),
   getStatus: () => request<ApiStatus>(ENDPOINTS.status),
   getCache: () => request<ApiCache>(ENDPOINTS.cache),
@@ -410,12 +363,18 @@ export const voxariaApi = {
       method: "POST",
       body: JSON.stringify({ oldIndex, newIndex }),
     }),
-  deleteQueueItem: (index: number) => request<{ ok: boolean }>(`${ENDPOINTS.queueDelete}/${index}`, { method: "DELETE" }),
+  deleteQueueItem: (index: number) =>
+    request<{ ok: boolean }>(`${ENDPOINTS.queueDelete}/${index}`, { method: "DELETE" }),
   previousTrack: () => request<{ ok: boolean }>(ENDPOINTS.previousTrack, { method: "POST" }),
   shuffleQueue: () => request<{ ok: boolean }>(ENDPOINTS.queueShuffle, { method: "POST" }),
   getPresets: () => request<ApiPreset[]>(ENDPOINTS.presets),
-  savePreset: (name: string) => request<{ ok: boolean; preset?: ApiPreset }>(ENDPOINTS.presetsSave, { method: "POST", body: JSON.stringify({ name }) }),
-  loadPreset: (name: string) => request<{ ok: boolean }>(ENDPOINTS.presetsLoad, { method: "POST", body: JSON.stringify({ name }) }),
+  savePreset: (name: string) =>
+    request<{ ok: boolean; preset?: ApiPreset }>(ENDPOINTS.presetsSave, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  loadPreset: (name: string) =>
+    request<{ ok: boolean }>(ENDPOINTS.presetsLoad, { method: "POST", body: JSON.stringify({ name }) }),
   getPitchMap: (title: string, artist: string) =>
     request<ApiPitchMap>(ENDPOINTS.pitchMap, {
       method: "POST",
