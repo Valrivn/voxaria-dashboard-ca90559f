@@ -93,9 +93,12 @@ const formatSec = (s: number) => {
   return `${m}:${sec}`;
 };
 
-const formatTrackDuration = (duration: ApiTrack["duration"]) => {
-  if (typeof duration === "number") return formatSec(duration);
-  return duration;
+const formatMsToClock = (value: number | undefined) => {
+  if (!Number.isFinite(value) || !value || value < 0) return "0:00";
+  const totalSec = Math.floor(value / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = `${totalSec % 60}`.padStart(2, "0");
+  return `${min}:${sec}`;
 };
 
 const parseLyricLine = (line: ApiLyrics["lines"][number]): LyricLine => {
@@ -147,8 +150,8 @@ const queueRow = (
       </button>
     )}
 
-    {track.art ? (
-      <img src={track.art} alt={`${track.title} cover`} loading="lazy" className="h-9 w-9 rounded object-cover" />
+    {track.artworkUrl ? (
+      <img src={track.artworkUrl} alt={`${track.title} cover`} loading="lazy" className="h-9 w-9 rounded object-cover" />
     ) : (
       <div className="flex h-9 w-9 items-center justify-center rounded border border-border bg-panel-soft">
         <Disc3 className="h-3.5 w-3.5 text-muted-foreground" />
@@ -157,10 +160,10 @@ const queueRow = (
 
     <div className="min-w-0">
       <p className="truncate text-xs font-semibold text-foreground">{track.title}</p>
-      <p className="truncate text-[11px] text-muted-foreground">{track.artist}</p>
+      <p className="truncate text-[11px] text-muted-foreground">{track.author}</p>
     </div>
 
-    <p className="text-[10px] text-muted-foreground">{formatTrackDuration(track.duration)}</p>
+    <p className="text-[10px] text-muted-foreground">{formatMsToClock(track.length)}</p>
 
     {track.requesterAvatar ? (
       <img
