@@ -163,7 +163,12 @@ const queueRow = (
     <p className="text-[10px] text-muted-foreground">{formatTrackDuration(track.duration)}</p>
 
     {track.requesterAvatar ? (
-      <img src={track.requesterAvatar} alt={`${track.requestedBy} avatar`} loading="lazy" className="h-7 w-7 rounded-full border border-border object-cover" />
+      <img
+        src={track.requesterAvatar}
+        alt={`${track.requesterName ?? track.requestedBy ?? "Requester"} avatar`}
+        loading="lazy"
+        className="h-7 w-7 rounded-full border border-border object-cover"
+      />
     ) : (
       <div className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-panel-soft">
         <UserCircle2 className="h-3.5 w-3.5 text-muted-foreground" />
@@ -420,9 +425,9 @@ const Index = () => {
     () => ({
       title: (player.data?.title ?? "").trim(),
       artist: (player.data?.artist ?? "").trim(),
-      url: (player.data?.url ?? "").trim(),
+      url: (player.data?.trackUrl ?? player.data?.url ?? "").trim(),
     }),
-    [player.data?.title, player.data?.artist, player.data?.url],
+    [player.data?.title, player.data?.artist, player.data?.trackUrl, player.data?.url],
   );
 
   const currentTrackKey = `${currentTrack.title}::${currentTrack.artist}`;
@@ -1192,10 +1197,10 @@ const Index = () => {
               </div>
 
               <div className="flex items-center gap-3 rounded-md border border-border/70 bg-panel/70 p-3">
-                {player.data?.art ? (
+                {player.data?.thumbnail || player.data?.art ? (
                   <img
-                    src={player.data.art}
-                    alt={`${player.data?.title ?? "Current song"} thumbnail`}
+                    src={player.data?.thumbnail ?? player.data?.art ?? ""}
+                    alt={`${player.data?.title ?? "Current song"} album cover`}
                     loading="lazy"
                     className="h-14 w-14 rounded-md border border-border/70 object-cover"
                   />
@@ -1208,6 +1213,19 @@ const Index = () => {
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-foreground">{playerUnavailable ? "Service Unavailable" : player.data?.title ?? "No track playing"}</p>
                   <p className="truncate text-xs text-muted-foreground">{playerUnavailable ? "Service Unavailable" : player.data?.artist ?? "Waiting for backend data"}</p>
+                  <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    {player.data?.requesterAvatar ? (
+                      <img
+                        src={player.data.requesterAvatar}
+                        alt={`${player.data?.requesterName ?? "Requester"} avatar`}
+                        loading="lazy"
+                        className="h-4 w-4 rounded-full border border-border object-cover"
+                      />
+                    ) : (
+                      <UserCircle2 className="h-4 w-4" />
+                    )}
+                    <span className="truncate">Requested by {player.data?.requesterName?.trim() || "Unknown"}</span>
+                  </div>
                 </div>
               </div>
             </article>
