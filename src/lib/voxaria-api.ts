@@ -38,6 +38,12 @@ export type ApiPlayer = {
   volume: number;
 };
 
+type RawPlayerPayload = {
+  success?: boolean;
+  data?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
 export type ApiPreset = {
   id?: string;
   name: string;
@@ -154,6 +160,59 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
+const toNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+};
+
+const toBoolean = (value: unknown): boolean | null => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    if (value.toLowerCase() === "true") return true;
+    if (value.toLowerCase() === "false") return false;
+  }
+  return null;
+};
+
+const pick = <T = unknown>(key: string, data: Record<string, unknown>, root: Record<string, unknown>): T | undefined => {
+  if (data[key] !== undefined) return data[key] as T;
+  if (root[key] !== undefined) return root[key] as T;
+  return undefined;
+};
+
+const normalizePlayerPayload = (payload: RawPlayerPayload): ApiPlayer => {
+  const data = payload?.data && typeof payload.data === "object" ? payload.data : {};
+  const root = payload && typeof payload === "object" ? payload : {};
+
+  const positionMs = toNumber(pick("position", data, root));
+  const currentTimeSec = toNumber(pick("currentTime", data, root));
+  const durationMs = toNumber(pick("duration", data, root));
+  const totalTimeSec = toNumber(pick("totalTime", data, root));
+
+  const positionSec = positionMs !== null ? positionMs / 1000 : currentTimeSec ?? 0;
+  const durationSec = durationMs !== null ? durationMs / 1000 : totalTimeSec ?? 0;
+  const isPaused = toBoolean(pick("paused", data, root)) ?? toBoolean(pick("isPaused", data, root)) ?? false;
+  const playing = toBoolean(pick("playing", data, root)) ?? false;
+
+  return {
+    title: (pick<string | null>("title", data, root) ?? null) as string | null,
+    artist: (pick<string | null>("artist", data, root) ?? null) as string | null,
+    url: (pick<string | null>("url", data, root) ?? null) as string | null,
+    durationSec: Math.max(0, durationSec),
+    positionSec: Math.max(0, positionSec),
+    startTime: (pick<number | null>("startTime", data, root) ?? null) as number | null,
+    lastPausedAt: (pick<number | null>("lastPausedAt", data, root) ?? null) as number | null,
+    isPaused,
+    playing,
+    art: (pick<string | undefined>("art", data, root) ?? undefined) as string | undefined,
+    volume: Math.max(0, Math.min(200, toNumber(pick("volume", data, root)) ?? 100)),
+  };
+};
+
 async function postJson<TResponse, TBody extends Record<string, unknown>>(
   path: string,
   body: TBody,
@@ -202,7 +261,10 @@ export const voxariaApi = {
   getStatus: () => request<ApiStatus>(ENDPOINTS.status),
   getCache: () => request<ApiCache>(ENDPOINTS.cache),
   getSettings: () => request<ApiSettings>(ENDPOINTS.settings),
-  getPlayer: () => request<ApiPlayer>(ENDPOINTS.player),
+  getPlayer: async () => {
+    const payload = await request<RawPlayerPayload>(ENDPOINTS.player);
+    return normalizePlayerPayload(payload);
+  },
   search: (query: string, guildId: string, userId?: string) =>
     postJson<{ ok: boolean; queued?: number }, { query: string; guildId: string }>(
       "/music/search",
