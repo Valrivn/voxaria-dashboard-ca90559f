@@ -1197,10 +1197,10 @@ const Index = () => {
               </div>
 
               <div className="flex items-center gap-3 rounded-md border border-border/70 bg-panel/70 p-3">
-                {player.data?.art ? (
+                {player.data?.thumbnail || player.data?.art ? (
                   <img
-                    src={player.data.art}
-                    alt={`${player.data?.title ?? "Current song"} thumbnail`}
+                    src={player.data?.thumbnail ?? player.data?.art ?? ""}
+                    alt={`${player.data?.title ?? "Current song"} album cover`}
                     loading="lazy"
                     className="h-14 w-14 rounded-md border border-border/70 object-cover"
                   />
