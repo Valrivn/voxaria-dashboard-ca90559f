@@ -2,8 +2,12 @@ export type ApiTrack = {
   id: string;
   title: string;
   artist: string;
+  author?: string;
+  length?: number;
+  artworkUrl?: string;
   duration: string | number;
   requestedBy: string;
+  requesterName?: string;
   requesterAvatar?: string;
   art?: string;
 };
@@ -27,7 +31,11 @@ export type ApiSettings = {
 export type ApiPlayer = {
   title: string | null;
   artist: string | null;
+  cleanedTitle?: string | null;
+  cleanedArtist?: string | null;
   url?: string | null;
+  uri?: string | null;
+  trackUrl?: string | null;
   durationSec: number;
   positionSec: number;
   startTime?: number | null;
@@ -35,12 +43,24 @@ export type ApiPlayer = {
   isPaused?: boolean;
   playing: boolean;
   art?: string;
+  thumbnail?: string;
+  requesterName?: string;
+  requesterAvatar?: string;
   volume: number;
 };
 
 type RawPlayerPayload = {
   success?: boolean;
   data?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+type RawQueuePayload = {
+  success?: boolean;
+  data?: unknown;
+  queue?: unknown;
+  tracks?: unknown;
+  items?: unknown;
   [key: string]: unknown;
 };
 
@@ -103,6 +123,7 @@ export const BASE_URL =
   import.meta.env.VITE_VOXARIA_API_BASE_URL?.trim() || "https://picks-lightweight-hang-medication.trycloudflare.com";
 const OWNER_USER_ID = "owner";
 const OWNER_API_KEY = "owner";
+const DEFAULT_GUILD_ID = import.meta.env.VITE_VOXARIA_GUILD_ID?.trim() || "owner";
 const ENDPOINTS = {
   queue: "/music/queue",
   history: "/music/history",
@@ -141,8 +162,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
       headers: {
         "Content-Type": "application/json",
-        "ngrok-skip-browser-warning": "true",
         "x-user-id": OWNER_USER_ID,
+        "x-guild-id": DEFAULT_GUILD_ID,
         "x-api-key": OWNER_API_KEY,
         ...Object.fromEntries(extraHeaders.entries()),
       },
@@ -207,7 +228,15 @@ const normalizePlayerPayload = (payload: RawPlayerPayload): ApiPlayer => {
   return {
     title: (pick<string | null>("title", data, root) ?? null) as string | null,
     artist: (pick<string | null>("artist", data, root) ?? null) as string | null,
+    cleanedTitle: (pick<string | null>("cleanedTitle", data, root) ?? pick<string | null>("title", data, root) ?? null) as string | null,
+    cleanedArtist: (pick<string | null>("cleanedArtist", data, root) ?? pick<string | null>("artist", data, root) ?? null) as string | null,
     url: (pick<string | null>("url", data, root) ?? null) as string | null,
+    uri: (pick<string | null>("uri", data, root) ?? null) as string | null,
+    trackUrl:
+      (pick<string | null>("trackUrl", data, root) ??
+        pick<string | null>("url", data, root) ??
+        pick<string | null>("uri", data, root) ??
+        null) as string | null,
     durationSec: Math.max(0, durationSec),
     positionSec: Math.max(0, positionSec),
     startTime: (pick<number | null>("startTime", data, root) ?? null) as number | null,
@@ -215,8 +244,46 @@ const normalizePlayerPayload = (payload: RawPlayerPayload): ApiPlayer => {
     isPaused,
     playing,
     art: (pick<string | undefined>("art", data, root) ?? undefined) as string | undefined,
+    thumbnail: (pick<string | undefined>("thumbnail", data, root) ?? pick<string | undefined>("art", data, root) ?? undefined) as string | undefined,
+    requesterName:
+      (pick<string | undefined>("requesterName", data, root) ??
+        pick<string | undefined>("requestedBy", data, root) ??
+        undefined) as string | undefined,
+    requesterAvatar: (pick<string | undefined>("requesterAvatar", data, root) ?? undefined) as string | undefined,
     volume: Math.max(0, Math.min(200, toNumber(pick("volume", data, root)) ?? 100)),
   };
+};
+
+const normalizeQueuePayload = (payload: RawQueuePayload): ApiTrack[] => {
+  const root = payload && typeof payload === "object" ? payload : {};
+  const raw = (root.data ?? root.queue ?? root.tracks ?? root.items ?? root) as unknown;
+  const list = Array.isArray(raw) ? raw : [];
+
+  return list.map((item, index) => {
+    const track = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+    const info = track.info && typeof track.info === "object" ? (track.info as Record<string, unknown>) : {};
+
+    const title = String(track.title ?? info.title ?? `Track ${index + 1}`);
+    const author = String(track.author ?? track.artist ?? info.author ?? info.artist ?? "Unknown artist");
+    const length = toNumber(track.length ?? info.length ?? track.duration ?? info.duration) ?? 0;
+    const artworkUrl =
+      (track.artworkUrl ?? track.thumbnail ?? track.art ?? info.artworkUrl ?? info.thumbnail ?? info.art) as string | undefined;
+    const requesterName = String(track.requesterName ?? track.requestedBy ?? info.requesterName ?? info.requestedBy ?? "Unknown");
+
+    return {
+      id: String(track.id ?? info.identifier ?? info.id ?? `${index}`),
+      title,
+      artist: author,
+      author,
+      length,
+      artworkUrl,
+      duration: length,
+      requestedBy: requesterName,
+      requesterName,
+      requesterAvatar: (track.requesterAvatar ?? info.requesterAvatar) as string | undefined,
+      art: (track.art ?? info.art ?? artworkUrl) as string | undefined,
+    };
+  });
 };
 
 async function postJson<TResponse, TBody extends Record<string, unknown>>(
@@ -230,7 +297,6 @@ async function postJson<TResponse, TBody extends Record<string, unknown>>(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "ngrok-skip-browser-warning": "true",
         "x-user-id": userId?.trim() || OWNER_USER_ID,
         "x-guild-id": guildId,
         "x-api-key": OWNER_API_KEY,
@@ -263,8 +329,14 @@ const cleanLyricsTitle = (title: string) =>
     .trim();
 
 export const voxariaApi = {
-  getQueue: () => request<ApiTrack[]>(ENDPOINTS.queue),
-  getHistory: () => request<ApiTrack[]>(ENDPOINTS.history),
+  getQueue: async () => {
+    const payload = await request<RawQueuePayload>(ENDPOINTS.queue);
+    return normalizeQueuePayload(payload);
+  },
+  getHistory: async () => {
+    const payload = await request<RawQueuePayload>(ENDPOINTS.history);
+    return normalizeQueuePayload(payload);
+  },
   getStatus: () => request<ApiStatus>(ENDPOINTS.status),
   getCache: () => request<ApiCache>(ENDPOINTS.cache),
   getSettings: () => request<ApiSettings>(ENDPOINTS.settings),
@@ -308,17 +380,21 @@ export const voxariaApi = {
       method: "POST",
       body: JSON.stringify({ title: cleanLyricsTitle(title), artist }),
     }),
-  fetchLyrics: async (query: string) => {
-    if (!query?.trim()) throw new Error("Missing search query for lyrics");
+  fetchLyrics: async (title: string, artist: string, guildId = DEFAULT_GUILD_ID, userId = OWNER_USER_ID) => {
+    const normalizedTitle = cleanLyricsTitle(title);
+    const normalizedArtist = artist?.trim();
+    if (!normalizedTitle) throw new Error("Missing search query for lyrics");
 
     try {
       const response = await fetch(`${BASE_URL}${ENDPOINTS.lyrics}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true",
+          "x-user-id": userId,
+          "x-guild-id": guildId,
+          "x-api-key": OWNER_API_KEY,
         },
-        body: JSON.stringify({ query: query.trim() }),
+        body: JSON.stringify({ title: normalizedTitle, artist: normalizedArtist }),
       });
 
       if (!response.ok) {
@@ -333,7 +409,7 @@ export const voxariaApi = {
       throw error;
     }
   },
-  startKaraoke: async (guildId: string, trackUrl: string) => {
+  startKaraoke: async (guildId: string, trackUrl: string, userId = OWNER_USER_ID) => {
     if (!guildId?.trim() || !trackUrl?.trim()) throw new Error("Missing guildId or trackUrl");
 
     try {
@@ -341,8 +417,9 @@ export const voxariaApi = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true",
+          "x-user-id": userId,
           "x-guild-id": guildId,
+          "x-api-key": OWNER_API_KEY,
         },
         body: JSON.stringify({ guildId, trackUrl: trackUrl.trim() }),
       });
