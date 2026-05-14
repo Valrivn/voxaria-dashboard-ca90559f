@@ -297,7 +297,6 @@ async function postJson<TResponse, TBody extends Record<string, unknown>>(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "ngrok-skip-browser-warning": "true",
         "x-user-id": userId?.trim() || OWNER_USER_ID,
         "x-guild-id": guildId,
         "x-api-key": OWNER_API_KEY,
@@ -330,8 +329,14 @@ const cleanLyricsTitle = (title: string) =>
     .trim();
 
 export const voxariaApi = {
-  getQueue: () => request<ApiTrack[]>(ENDPOINTS.queue),
-  getHistory: () => request<ApiTrack[]>(ENDPOINTS.history),
+  getQueue: async () => {
+    const payload = await request<RawQueuePayload>(ENDPOINTS.queue);
+    return normalizeQueuePayload(payload);
+  },
+  getHistory: async () => {
+    const payload = await request<RawQueuePayload>(ENDPOINTS.history);
+    return normalizeQueuePayload(payload);
+  },
   getStatus: () => request<ApiStatus>(ENDPOINTS.status),
   getCache: () => request<ApiCache>(ENDPOINTS.cache),
   getSettings: () => request<ApiSettings>(ENDPOINTS.settings),
@@ -375,17 +380,21 @@ export const voxariaApi = {
       method: "POST",
       body: JSON.stringify({ title: cleanLyricsTitle(title), artist }),
     }),
-  fetchLyrics: async (query: string) => {
-    if (!query?.trim()) throw new Error("Missing search query for lyrics");
+  fetchLyrics: async (title: string, artist: string, guildId = DEFAULT_GUILD_ID, userId = OWNER_USER_ID) => {
+    const normalizedTitle = cleanLyricsTitle(title);
+    const normalizedArtist = artist?.trim();
+    if (!normalizedTitle) throw new Error("Missing search query for lyrics");
 
     try {
       const response = await fetch(`${BASE_URL}${ENDPOINTS.lyrics}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true",
+          "x-user-id": userId,
+          "x-guild-id": guildId,
+          "x-api-key": OWNER_API_KEY,
         },
-        body: JSON.stringify({ query: query.trim() }),
+        body: JSON.stringify({ title: normalizedTitle, artist: normalizedArtist }),
       });
 
       if (!response.ok) {
