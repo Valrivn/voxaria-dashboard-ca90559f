@@ -2,8 +2,12 @@ export type ApiTrack = {
   id: string;
   title: string;
   artist: string;
+  author?: string;
+  length?: number;
+  artworkUrl?: string;
   duration: string | number;
   requestedBy: string;
+  requesterName?: string;
   requesterAvatar?: string;
   art?: string;
 };
@@ -27,7 +31,11 @@ export type ApiSettings = {
 export type ApiPlayer = {
   title: string | null;
   artist: string | null;
+  cleanedTitle?: string | null;
+  cleanedArtist?: string | null;
   url?: string | null;
+  uri?: string | null;
+  trackUrl?: string | null;
   durationSec: number;
   positionSec: number;
   startTime?: number | null;
@@ -35,6 +43,9 @@ export type ApiPlayer = {
   isPaused?: boolean;
   playing: boolean;
   art?: string;
+  thumbnail?: string;
+  requesterName?: string;
+  requesterAvatar?: string;
   volume: number;
 };
 
@@ -103,6 +114,7 @@ export const BASE_URL =
   import.meta.env.VITE_VOXARIA_API_BASE_URL?.trim() || "https://picks-lightweight-hang-medication.trycloudflare.com";
 const OWNER_USER_ID = "owner";
 const OWNER_API_KEY = "owner";
+const DEFAULT_GUILD_ID = import.meta.env.VITE_VOXARIA_GUILD_ID?.trim() || "owner";
 const ENDPOINTS = {
   queue: "/music/queue",
   history: "/music/history",
@@ -141,8 +153,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
       headers: {
         "Content-Type": "application/json",
-        "ngrok-skip-browser-warning": "true",
         "x-user-id": OWNER_USER_ID,
+        "x-guild-id": DEFAULT_GUILD_ID,
         "x-api-key": OWNER_API_KEY,
         ...Object.fromEntries(extraHeaders.entries()),
       },
