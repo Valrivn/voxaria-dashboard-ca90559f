@@ -225,6 +225,7 @@ const Index = () => {
   const [isFetchingLyrics, setIsFetchingLyrics] = useState(false);
   const [isGeneratingKaraoke, setIsGeneratingKaraoke] = useState(false);
   const [currentPitchMap, setCurrentPitchMap] = useState<ApiPitchMap | null>(null);
+  const [interpolatedPositionMs, setInterpolatedPositionMs] = useState(0);
 
   const animationFrameRef = useRef<number | null>(null);
   const karaokeAnimationRef = useRef<number | null>(null);
@@ -244,6 +245,8 @@ const Index = () => {
   const pitchDetectorRef = useRef<PitchDetector<number[]> | null>(null);
   const micByteBufferRef = useRef<Uint8Array | null>(null);
   const latestPitchHzRef = useRef<number | null>(null);
+  const backendClockRef = useRef({ positionMs: 0, receivedAt: 0, paused: true, durationMs: 0 });
+  const lastClockEmitRef = useRef(0);
 
   const [sessionUsers, setSessionUsers] = useState<SessionUser[]>([
     {
@@ -426,11 +429,11 @@ const Index = () => {
 
   const currentTrack = useMemo(
     () => ({
-      title: (player.data?.title ?? "").trim(),
-      artist: (player.data?.artist ?? "").trim(),
-      url: (player.data?.trackUrl ?? player.data?.url ?? "").trim(),
+      title: (player.data?.cleanedTitle ?? player.data?.title ?? "").trim(),
+      artist: (player.data?.cleanedArtist ?? player.data?.artist ?? "").trim(),
+      url: (player.data?.trackUrl ?? player.data?.url ?? player.data?.uri ?? "").trim(),
     }),
-    [player.data?.title, player.data?.artist, player.data?.trackUrl, player.data?.url],
+    [player.data?.cleanedTitle, player.data?.title, player.data?.cleanedArtist, player.data?.artist, player.data?.trackUrl, player.data?.url, player.data?.uri],
   );
 
   const currentTrackKey = `${currentTrack.title}::${currentTrack.artist}`;
@@ -462,7 +465,7 @@ const Index = () => {
 
     setIsFetchingLyrics(true);
     try {
-      const response = await voxariaApi.fetchLyrics(currentTrack.title);
+      const response = await voxariaApi.fetchLyrics(currentTrack.title, currentTrack.artist, activeGuildId);
       const lyricsText = response?.lyrics?.trim();
 
       if (!lyricsText) {
