@@ -409,7 +409,7 @@ export const voxariaApi = {
       throw error;
     }
   },
-  startKaraoke: async (guildId: string, trackUrl: string) => {
+  startKaraoke: async (guildId: string, trackUrl: string, userId = OWNER_USER_ID) => {
     if (!guildId?.trim() || !trackUrl?.trim()) throw new Error("Missing guildId or trackUrl");
 
     try {
@@ -417,8 +417,9 @@ export const voxariaApi = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true",
+          "x-user-id": userId,
           "x-guild-id": guildId,
+          "x-api-key": OWNER_API_KEY,
         },
         body: JSON.stringify({ guildId, trackUrl: trackUrl.trim() }),
       });
