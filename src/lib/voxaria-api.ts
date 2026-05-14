@@ -119,8 +119,7 @@ export type ApiAuditTrack = {
 type PlaybackAction = "previous" | "play_pause" | "next" | "stop";
 
 // 🌐 Swap your old ngrok fallback link with your active Cloudflare link here:
-export const BASE_URL =
-  import.meta.env.VITE_VOXARIA_API_BASE_URL?.trim() || "https://picks-lightweight-hang-medication.trycloudflare.com";
+export const BASE_URL = import.meta.env.VITE_VOXARIA_API_BASE_URL?.trim() || "unhitched-shrink-dorsal.ngrok-free.dev";
 const OWNER_USER_ID = "owner";
 const OWNER_API_KEY = "owner";
 const DEFAULT_GUILD_ID = import.meta.env.VITE_VOXARIA_GUILD_ID?.trim() || "owner";
@@ -228,15 +227,18 @@ const normalizePlayerPayload = (payload: RawPlayerPayload): ApiPlayer => {
   return {
     title: (pick<string | null>("title", data, root) ?? null) as string | null,
     artist: (pick<string | null>("artist", data, root) ?? null) as string | null,
-    cleanedTitle: (pick<string | null>("cleanedTitle", data, root) ?? pick<string | null>("title", data, root) ?? null) as string | null,
-    cleanedArtist: (pick<string | null>("cleanedArtist", data, root) ?? pick<string | null>("artist", data, root) ?? null) as string | null,
+    cleanedTitle: (pick<string | null>("cleanedTitle", data, root) ??
+      pick<string | null>("title", data, root) ??
+      null) as string | null,
+    cleanedArtist: (pick<string | null>("cleanedArtist", data, root) ??
+      pick<string | null>("artist", data, root) ??
+      null) as string | null,
     url: (pick<string | null>("url", data, root) ?? null) as string | null,
     uri: (pick<string | null>("uri", data, root) ?? null) as string | null,
-    trackUrl:
-      (pick<string | null>("trackUrl", data, root) ??
-        pick<string | null>("url", data, root) ??
-        pick<string | null>("uri", data, root) ??
-        null) as string | null,
+    trackUrl: (pick<string | null>("trackUrl", data, root) ??
+      pick<string | null>("url", data, root) ??
+      pick<string | null>("uri", data, root) ??
+      null) as string | null,
     durationSec: Math.max(0, durationSec),
     positionSec: Math.max(0, positionSec),
     startTime: (pick<number | null>("startTime", data, root) ?? null) as number | null,
@@ -244,11 +246,12 @@ const normalizePlayerPayload = (payload: RawPlayerPayload): ApiPlayer => {
     isPaused,
     playing,
     art: (pick<string | undefined>("art", data, root) ?? undefined) as string | undefined,
-    thumbnail: (pick<string | undefined>("thumbnail", data, root) ?? pick<string | undefined>("art", data, root) ?? undefined) as string | undefined,
-    requesterName:
-      (pick<string | undefined>("requesterName", data, root) ??
-        pick<string | undefined>("requestedBy", data, root) ??
-        undefined) as string | undefined,
+    thumbnail: (pick<string | undefined>("thumbnail", data, root) ??
+      pick<string | undefined>("art", data, root) ??
+      undefined) as string | undefined,
+    requesterName: (pick<string | undefined>("requesterName", data, root) ??
+      pick<string | undefined>("requestedBy", data, root) ??
+      undefined) as string | undefined,
     requesterAvatar: (pick<string | undefined>("requesterAvatar", data, root) ?? undefined) as string | undefined,
     volume: Math.max(0, Math.min(200, toNumber(pick("volume", data, root)) ?? 100)),
   };
@@ -266,9 +269,15 @@ const normalizeQueuePayload = (payload: RawQueuePayload): ApiTrack[] => {
     const title = String(track.title ?? info.title ?? `Track ${index + 1}`);
     const author = String(track.author ?? track.artist ?? info.author ?? info.artist ?? "Unknown artist");
     const length = toNumber(track.length ?? info.length ?? track.duration ?? info.duration) ?? 0;
-    const artworkUrl =
-      (track.artworkUrl ?? track.thumbnail ?? track.art ?? info.artworkUrl ?? info.thumbnail ?? info.art) as string | undefined;
-    const requesterName = String(track.requesterName ?? track.requestedBy ?? info.requesterName ?? info.requestedBy ?? "Unknown");
+    const artworkUrl = (track.artworkUrl ??
+      track.thumbnail ??
+      track.art ??
+      info.artworkUrl ??
+      info.thumbnail ??
+      info.art) as string | undefined;
+    const requesterName = String(
+      track.requesterName ?? track.requestedBy ?? info.requesterName ?? info.requestedBy ?? "Unknown",
+    );
 
     return {
       id: String(track.id ?? info.identifier ?? info.id ?? `${index}`),
