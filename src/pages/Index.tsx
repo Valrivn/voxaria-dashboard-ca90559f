@@ -507,66 +507,76 @@ const Index = () => {
 
   useEffect(() => {
     if (!player.data) return;
-    if (!normalizedLyrics.length) {
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-      return;
-    }
 
-    const fallbackStart = Date.now() - Math.max(0, player.data.positionSec ?? 0) * 1000;
-    const startTime = player.data.startTime ?? fallbackStart;
+    const now = performance.now();
+    const positionMs = Math.max(0, Math.round((player.data.positionSec ?? 0) * 1000));
+    const durationMs = Math.max(0, Math.round((player.data.durationSec ?? 0) * 1000));
+    const paused = Boolean(player.data.isPaused ?? !player.data.playing);
 
-    const frame = () => {
-      const now = Date.now();
-      const paused = Boolean(player.data.isPaused);
-      const rawMs = paused
-        ? Math.max(0, (player.data.lastPausedAt ?? now) - startTime)
-        : Math.max(0, now - startTime);
-
-      const compensatedMs = Math.max(0, rawMs - rttCompensationMs);
-      const adjustedMs = Math.max(0, compensatedMs - syncOffsetMs);
-      smoothTimeRef.current = adjustedMs;
-
-      if (currentPositionRef.current) {
-        currentPositionRef.current.textContent = formatSec(adjustedMs / 1000);
-      }
-
-      if (totalDurationRef.current) {
-        totalDurationRef.current.textContent = formatSec(player.data.durationSec ?? 0);
-      }
-
-      const fallbackIndex = Math.min(normalizedLyrics.length - 1, Math.floor(adjustedMs / LYRIC_HOLD_WINDOW_MS));
-      const nextIndex = normalizedLyrics.findIndex((line, idx) => {
-        const start = line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS;
-        const nextStart = normalizedLyrics[idx + 1]?.timeMs ?? Number.POSITIVE_INFINITY;
-        const end = Math.min(start + LYRIC_HOLD_WINDOW_MS, nextStart);
-        return adjustedMs >= start && adjustedMs < end;
-      });
-
-      const resolved = nextIndex >= 0 ? nextIndex : fallbackIndex;
-      if (resolved !== activeLineRef.current) {
-        activeLineRef.current = resolved;
-        setActiveLine(resolved);
-        const target = lyricsContainerRef.current?.querySelector<HTMLElement>(`[data-lyric-index='${resolved}']`);
-        target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      }
-
-      animationFrameRef.current = requestAnimationFrame(frame);
+    backendClockRef.current = {
+      positionMs,
+      receivedAt: now,
+      paused,
+      durationMs,
     };
 
-    animationFrameRef.current = requestAnimationFrame(frame);
+    smoothTimeRef.current = positionMs;
+    setInterpolatedPositionMs(positionMs);
+  }, [player.data?.positionSec, player.data?.durationSec, player.data?.isPaused, player.data?.playing]);
+
+  useEffect(() => {
+    const tick = () => {
+      const now = performance.now();
+      const { positionMs, receivedAt, paused, durationMs } = backendClockRef.current;
+      const elapsed = paused ? 0 : now - receivedAt;
+      const nextMs = durationMs > 0 ? Math.min(durationMs, positionMs + elapsed) : Math.max(0, positionMs + elapsed);
+
+      smoothTimeRef.current = nextMs;
+
+      if (now - lastClockEmitRef.current >= 33) {
+        lastClockEmitRef.current = now;
+        setInterpolatedPositionMs(nextMs);
+      }
+
+      animationFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    animationFrameRef.current = requestAnimationFrame(tick);
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [
-    player.data?.startTime,
-    player.data?.positionSec,
-    player.data?.durationSec,
-    player.data?.isPaused,
-    player.data?.lastPausedAt,
-    rttCompensationMs,
-    syncOffsetMs,
-    normalizedLyrics,
-  ]);
+  }, []);
+
+  useEffect(() => {
+    const adjustedMs = Math.max(0, interpolatedPositionMs - rttCompensationMs - syncOffsetMs);
+    smoothTimeRef.current = adjustedMs;
+
+    if (currentPositionRef.current) {
+      currentPositionRef.current.textContent = formatSec(adjustedMs / 1000);
+    }
+
+    if (totalDurationRef.current) {
+      totalDurationRef.current.textContent = formatSec(player.data?.durationSec ?? 0);
+    }
+
+    if (!normalizedLyrics.length) return;
+
+    const fallbackIndex = Math.min(normalizedLyrics.length - 1, Math.floor(adjustedMs / LYRIC_HOLD_WINDOW_MS));
+    const nextIndex = normalizedLyrics.findIndex((line, idx) => {
+      const start = line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS;
+      const nextStart = normalizedLyrics[idx + 1]?.timeMs ?? Number.POSITIVE_INFINITY;
+      const end = Math.min(start + LYRIC_HOLD_WINDOW_MS, nextStart);
+      return adjustedMs >= start && adjustedMs < end;
+    });
+
+    const resolved = nextIndex >= 0 ? nextIndex : fallbackIndex;
+    if (resolved !== activeLineRef.current) {
+      activeLineRef.current = resolved;
+      setActiveLine(resolved);
+      const target = lyricsContainerRef.current?.querySelector<HTMLElement>(`[data-lyric-index='${resolved}']`);
+      target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [interpolatedPositionMs, normalizedLyrics, player.data?.durationSec, rttCompensationMs, syncOffsetMs]);
 
   useEffect(() => {
     if (typeof player.data?.volume === "number") {
@@ -581,8 +591,9 @@ const Index = () => {
 
   const playerProgress = useMemo(() => {
     if (!player.data || !player.data.durationSec) return 0;
-    return Math.min(100, Math.round((Math.max(player.data.positionSec, 0) / player.data.durationSec) * 100));
-  }, [player.data?.positionSec, player.data?.durationSec]);
+    const currentSec = Math.max(interpolatedPositionMs / 1000, 0);
+    return Math.min(100, Math.round((currentSec / player.data.durationSec) * 100));
+  }, [interpolatedPositionMs, player.data?.durationSec]);
 
   const displayVolume = useMemo(() => Math.min(200, Math.max(0, Math.round(uiVolume))), [uiVolume]);
   const boostActive = displayVolume > 100;
