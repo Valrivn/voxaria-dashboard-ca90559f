@@ -101,6 +101,8 @@ const formatMsToClock = (value: number | undefined) => {
   return `${min}:${sec}`;
 };
 
+const getPresetId = (preset: ApiPreset) => preset.id ?? preset.name;
+
 const parseLyricLine = (line: ApiLyrics["lines"][number]): LyricLine => {
   if (typeof line === "string") {
     const match = line.match(/^\s*\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]\s*(.*)$/);
