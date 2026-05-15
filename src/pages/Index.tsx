@@ -1381,35 +1381,10 @@ const Index = () => {
             <AuditLogViewer />
 
             <article className="rounded-xl border border-primary/35 bg-panel-soft/70 p-4 shadow-soft neon-edge">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-primary">Saved Playlists</h3>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 border-primary/55 text-primary hover:bg-accent/35"
-                  onClick={() => setSavePresetOpen(true)}
-                >
-                  <Plus className="mr-1 h-3.5 w-3.5" /> Save Current Queue
-                </Button>
-              </div>
-
-              <div className="space-y-2">
-                {(presets.data ?? []).length ? (
-                  (presets.data ?? []).map((preset, idx) => (
-                    <div key={`${preset.name}-${idx}`} className="flex items-center justify-between rounded-md border border-border/70 bg-panel/80 p-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold text-foreground">{preset.name}</p>
-                        <p className="text-[11px] text-muted-foreground">{preset.tracks ?? 0} tracks</p>
-                      </div>
-                      <Button size="sm" variant="outline" className="h-7 border-primary/55 text-primary hover:bg-accent/35" onClick={() => loadPreset(preset)}>
-                        Load
-                      </Button>
-                    </div>
-                  ))
-                ) : (
-                  <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">No saved playlists yet.</p>
-                )}
-              </div>
+              <h3 className="mb-2 text-sm font-semibold text-primary">Playlist Presets</h3>
+              <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">
+                Playlist Builder now edits saved playlists only. It no longer pushes tracks to the live queue.
+              </p>
             </article>
           </section>
 
@@ -1417,155 +1392,150 @@ const Index = () => {
             <Tabs defaultValue="playlist-builder" className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft">
               <TabsList className="mb-3 h-9">
                 <TabsTrigger value="playlist-builder">Playlist Builder</TabsTrigger>
-                <TabsTrigger value="saved-presets">Saved Presets</TabsTrigger>
               </TabsList>
 
               <TabsContent value="playlist-builder" className="mt-0 space-y-3">
-                <div className="grid gap-3 lg:grid-cols-[1.6fr_1fr]">
-                  <div className="rounded-md border border-border/70 bg-panel/80 p-3">
-                    <h3 className="mb-2 text-sm font-semibold text-primary">Search Catalog</h3>
-                    <Input
-                      value={playlistBuilderQuery}
-                      onChange={(e) => setPlaylistBuilderQuery(e.target.value)}
-                      placeholder="Search for songs to add..."
-                      className="mb-2 h-9 bg-panel-soft/60"
-                    />
-                    <div className="space-y-2" style={{ maxHeight: 220, overflowY: "auto" }}>
-                      {playlistSearch.isError ? (
-                        <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">Service Unavailable</p>
-                      ) : (
-                        (playlistSearch.data ?? []).map((track) => (
-                          <div key={track.id} className="flex items-center gap-2 rounded-md border border-border/70 bg-panel-soft/70 p-2">
-                            {track.thumbnail ? (
-                              <img src={track.thumbnail} alt={`${track.title} thumbnail`} loading="lazy" className="h-10 w-10 rounded object-cover" />
-                            ) : (
-                              <div className="flex h-10 w-10 items-center justify-center rounded border border-border/70 bg-panel">
-                                <Disc3 className="h-4 w-4 text-muted-foreground" />
-                              </div>
-                            )}
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-xs font-semibold text-foreground">{track.title}</p>
-                              <p className="truncate text-[11px] text-muted-foreground">{track.artist}</p>
-                            </div>
-                            <Button size="sm" className="h-7 neon-glow" onClick={() => addTrackToPlaylist(track)}>
-                              Add
-                            </Button>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="rounded-md border border-border/70 bg-panel/80 p-3">
-                    <h3 className="mb-2 text-sm font-semibold text-primary">Custom Playlists</h3>
-                    <div className="mb-2 grid grid-cols-[1fr_auto] gap-2">
+                <div className="grid gap-3 lg:grid-cols-[300px_1fr]">
+                  <aside className="rounded-md border border-border/70 bg-panel/80 p-3">
+                    <h3 className="mb-2 text-sm font-semibold text-primary">Saved Playlists</h3>
+                    <div className="mb-3 grid grid-cols-[1fr_auto] gap-2">
                       <Input
-                        value={playlistName}
-                        onChange={(e) => setPlaylistName(e.target.value)}
-                        placeholder="Playlist name"
+                        value={newPresetName}
+                        onChange={(e) => setNewPresetName(e.target.value)}
+                        placeholder="New playlist name"
                         className="h-9 bg-panel-soft/60"
                       />
                       <Button
                         size="sm"
-                        variant="outline"
-                        className="h-9 border-primary/55 text-primary hover:bg-accent/35"
-                        onClick={() => setActivePlaylist(playlistName.trim() || "My Playlist")}
+                        className="h-9 neon-glow"
+                        onClick={createPreset}
+                        disabled={!newPresetName.trim() || createPresetMutation.isPending}
                       >
-                        Use
+                        <Plus className="h-3.5 w-3.5" />
                       </Button>
                     </div>
 
-                    <div className="mb-2 flex flex-wrap gap-2">
-                      {playlistNames.map((name) => (
-                        <Button
-                          key={name}
-                          size="sm"
-                          variant={activePlaylist === name ? "secondary" : "outline"}
-                          className="h-7 border-primary/45 text-primary hover:bg-accent/35"
-                          onClick={() => setActivePlaylist(name)}
-                        >
-                          {name}
-                        </Button>
-                      ))}
-                    </div>
-
-                    <div className="space-y-2" style={{ maxHeight: 180, overflowY: "auto" }}>
-                      {resolvedPlaylistTracks.length ? (
-                        resolvedPlaylistTracks.map((track) => (
-                          <div key={track.id} className="flex items-center justify-between rounded-md border border-border/70 bg-panel-soft/70 p-2">
-                            <div className="min-w-0">
-                              <p className="truncate text-xs font-semibold text-foreground">{track.title}</p>
-                              <p className="truncate text-[11px] text-muted-foreground">{track.artist}</p>
-                            </div>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-7 w-7 text-muted-foreground hover:bg-accent/35 hover:text-primary"
-                              onClick={() => removeTrackFromPlaylist(track.id)}
+                    <div className="space-y-2" style={{ maxHeight: 360, overflowY: "auto" }}>
+                      {presetsData.length ? (
+                        presetsData.map((preset, idx) => {
+                          const presetId = getPresetId(preset);
+                          const isActive = activePresetId === presetId;
+                          return (
+                            <div
+                              key={`${presetId}-${idx}`}
+                              className={`flex items-center justify-between rounded-md border p-2 transition ${
+                                isActive ? "border-primary/55 bg-accent/30" : "border-border/70 bg-panel-soft/70"
+                              }`}
                             >
-                              <X className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        ))
+                              <button
+                                type="button"
+                                className="min-w-0 flex-1 text-left"
+                                onClick={() => setActivePresetId(presetId)}
+                              >
+                                <p className="truncate text-xs font-semibold text-foreground">{preset.name}</p>
+                                <p className="text-[11px] text-muted-foreground">{preset.tracks ?? preset.items?.length ?? 0} tracks</p>
+                              </button>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 text-muted-foreground hover:bg-accent/35 hover:text-primary"
+                                onClick={() => deletePreset(preset)}
+                                disabled={deletePresetMutation.isPending}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          );
+                        })
                       ) : (
                         <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">
-                          No tracks in this custom playlist yet.
+                          No saved playlists yet.
                         </p>
                       )}
                     </div>
-                  </div>
-                </div>
-              </TabsContent>
+                  </aside>
 
-              <TabsContent value="saved-presets" className="mt-0">
-                <div className="grid gap-2 lg:grid-cols-2">
-                  {(presets.data ?? []).length ? (
-                    (presets.data ?? []).map((preset, idx) => (
-                      <div key={`${preset.name}-${idx}`} className="flex items-center justify-between rounded-md border border-border/70 bg-panel/80 p-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-semibold text-foreground">{preset.name}</p>
-                          <p className="text-[11px] text-muted-foreground">{preset.tracks ?? 0} tracks</p>
+                  <section className="rounded-md border border-border/70 bg-panel/80 p-3">
+                    <h3 className="mb-2 text-sm font-semibold text-primary">Active Editor</h3>
+                    {activePreset ? (
+                      <>
+                        <p className="mb-2 text-xs text-muted-foreground">Editing: {activePreset.name}</p>
+                        <Input
+                          value={playlistBuilderQuery}
+                          onChange={(e) => setPlaylistBuilderQuery(e.target.value)}
+                          placeholder="Search catalog and click Add to append to this playlist..."
+                          className="mb-2 h-9 bg-panel-soft/60"
+                        />
+
+                        <div className="mb-3 space-y-2" style={{ maxHeight: 180, overflowY: "auto" }}>
+                          {playlistSearch.isError ? (
+                            <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">Service Unavailable</p>
+                          ) : (
+                            (playlistSearch.data ?? []).map((track) => (
+                              <div key={track.id} className="flex items-center gap-2 rounded-md border border-border/70 bg-panel-soft/70 p-2">
+                                {track.thumbnail ? (
+                                  <img src={track.thumbnail} alt={`${track.title} thumbnail`} loading="lazy" className="h-10 w-10 rounded object-cover" />
+                                ) : (
+                                  <div className="flex h-10 w-10 items-center justify-center rounded border border-border/70 bg-panel">
+                                    <Disc3 className="h-4 w-4 text-muted-foreground" />
+                                  </div>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-xs font-semibold text-foreground">{track.title}</p>
+                                  <p className="truncate text-[11px] text-muted-foreground">{track.artist}</p>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  className="h-7 neon-glow"
+                                  onClick={() => addTrackToActivePreset(track)}
+                                  disabled={addTrackToPresetMutation.isPending}
+                                >
+                                  Add
+                                </Button>
+                              </div>
+                            ))
+                          )}
                         </div>
-                        <Button size="sm" variant="outline" className="h-7 border-primary/55 text-primary hover:bg-accent/35" onClick={() => loadPreset(preset)}>
-                          Load
-                        </Button>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">No saved presets yet.</p>
-                  )}
+
+                        <div className="space-y-2" style={{ maxHeight: 260, overflowY: "auto" }}>
+                          {activePresetTracks.length ? (
+                            activePresetTracks.map((track, index) => (
+                              <div key={`${track.id}-${index}`} className="flex items-center justify-between rounded-md border border-border/70 bg-panel-soft/70 p-2">
+                                <div className="min-w-0">
+                                  <p className="truncate text-xs font-semibold text-foreground">{track.title}</p>
+                                  <p className="truncate text-[11px] text-muted-foreground">{track.artist}</p>
+                                </div>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7 text-muted-foreground hover:bg-accent/35 hover:text-primary"
+                                  onClick={() => removeTrackFromActivePreset(index)}
+                                  disabled={removeTrackFromPresetMutation.isPending}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">
+                              No tracks in this playlist yet.
+                            </p>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">
+                        Create a playlist on the left to start editing.
+                      </p>
+                    )}
+                  </section>
                 </div>
               </TabsContent>
             </Tabs>
           </section>
         </main>
       </div>
-
-      <Dialog open={savePresetOpen} onOpenChange={setSavePresetOpen}>
-        <DialogContent className="max-w-sm border-primary/35 bg-panel text-foreground">
-          <DialogHeader>
-            <DialogTitle className="text-primary">Save queue as preset</DialogTitle>
-            <DialogDescription>Name this playlist to save it as a preset.</DialogDescription>
-          </DialogHeader>
-
-          <Input
-            value={presetName}
-            onChange={(e) => setPresetName(e.target.value)}
-            placeholder="e.g. Late Night Coding"
-            className="bg-panel-soft/70"
-            autoFocus
-          />
-
-          <DialogFooter>
-            <Button variant="outline" className="border-primary/45 text-primary hover:bg-accent/35" onClick={() => setSavePresetOpen(false)}>
-              Cancel
-            </Button>
-            <Button className="neon-glow" onClick={() => saveCurrentQueueAsPreset(presetName)} disabled={!presetName.trim() || savePresetMutation.isPending}>
-              Save Playlist
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={scoreSummaryOpen} onOpenChange={setScoreSummaryOpen}>
         <DialogContent className="max-w-sm border-primary/35 bg-panel text-foreground">
