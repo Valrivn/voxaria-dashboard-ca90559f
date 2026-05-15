@@ -483,7 +483,10 @@ export const voxariaApi = {
     request<{ ok: boolean }>(`${ENDPOINTS.queueDelete}/${index}`, { method: "DELETE" }),
   previousTrack: () => request<{ ok: boolean }>(ENDPOINTS.previousTrack, { method: "POST" }),
   shuffleQueue: () => request<{ ok: boolean }>(ENDPOINTS.queueShuffle, { method: "POST" }),
-  getPresets: () => request<ApiPreset[]>(ENDPOINTS.presets),
+  getPresets: async () => {
+    const payload = await request<unknown>(ENDPOINTS.presets);
+    return normalizePresetsPayload(payload);
+  },
   savePreset: (name: string) =>
     request<{ ok: boolean; preset?: ApiPreset }>(ENDPOINTS.presetsSave, {
       method: "POST",
