@@ -68,6 +68,7 @@ export type ApiPreset = {
   id?: string;
   name: string;
   tracks?: number;
+  items?: ApiSearchResult[];
 };
 
 export type ApiLyrics = {
@@ -148,6 +149,10 @@ const ENDPOINTS = {
   presets: "/presets",
   presetsSave: "/presets/save",
   presetsLoad: "/presets/load",
+  presetsCreate: "/presets/create",
+  presetsTrackAdd: "/presets/track/add",
+  presetsTrackRemove: "/presets/track/remove",
+  presetsDelete: "/presets/delete",
   pitchMap: "/music/pitch-map",
   searchResults: "/music/search/results",
   audit: "/api/audit",
@@ -320,12 +325,20 @@ const normalizePresetsPayload = (payload: unknown): ApiPreset[] => {
   return list.map((item, index) => {
     const preset = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
     const name = toStringValue(preset.name) ?? `Preset ${index + 1}`;
-    const tracks = toNumber(preset.tracks ?? preset.count) ?? 0;
+    const rawItems = preset.items ?? preset.tracks ?? preset.queue ?? preset.songs;
+    const parsedItems = Array.isArray(rawItems)
+      ? normalizeSearchCatalogPayload(rawItems)
+      : normalizeSearchCatalogPayload(preset.data ?? []);
+    const tracks =
+      (Array.isArray(rawItems) ? rawItems.length : null) ??
+      toNumber(preset.count ?? preset.trackCount ?? preset.tracks) ??
+      parsedItems.length;
 
     return {
       id: toOptionalString(preset.id),
       name,
       tracks,
+      items: parsedItems,
     };
   });
 };
@@ -541,6 +554,26 @@ export const voxariaApi = {
     }),
   loadPreset: (name: string) =>
     request<{ ok: boolean }>(ENDPOINTS.presetsLoad, { method: "POST", body: JSON.stringify({ name }) }),
+  createPreset: (name: string) =>
+    request<{ ok: boolean; preset?: ApiPreset }>(ENDPOINTS.presetsCreate, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  addTrackToPreset: (presetId: string, track: ApiSearchResult) =>
+    request<{ ok: boolean; preset?: ApiPreset }>(ENDPOINTS.presetsTrackAdd, {
+      method: "POST",
+      body: JSON.stringify({ presetId, track }),
+    }),
+  removeTrackFromPreset: (presetId: string, trackIndex: number) =>
+    request<{ ok: boolean; preset?: ApiPreset }>(ENDPOINTS.presetsTrackRemove, {
+      method: "POST",
+      body: JSON.stringify({ presetId, trackIndex }),
+    }),
+  deletePreset: (presetId: string) =>
+    request<{ ok: boolean }>(ENDPOINTS.presetsDelete, {
+      method: "DELETE",
+      body: JSON.stringify({ presetId }),
+    }),
   getPitchMap: (title: string, artist: string) =>
     request<ApiPitchMap>(ENDPOINTS.pitchMap, {
       method: "POST",
