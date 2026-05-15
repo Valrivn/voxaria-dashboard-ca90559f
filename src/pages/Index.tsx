@@ -742,24 +742,6 @@ const Index = () => {
     return nearest.midi % 12;
   }, []);
 
-  const addTrackToPlaylist = (track: ApiSearchResult) => {
-    const normalizedName = playlistName.trim() || "My Playlist";
-    setActivePlaylist(normalizedName);
-    setCustomPlaylists((prev) => {
-      const existing = prev[normalizedName] ?? [];
-      if (existing.some((item) => item.id === track.id)) return prev;
-      return { ...prev, [normalizedName]: [...existing, track] };
-    });
-    toast({ title: "Added to playlist", description: `${track.title} was added to ${normalizedName}.` });
-  };
-
-  const removeTrackFromPlaylist = (trackId: string) => {
-    setCustomPlaylists((prev) => ({
-      ...prev,
-      [activePlaylist]: (prev[activePlaylist] ?? []).filter((track) => track.id !== trackId),
-    }));
-  };
-
   const startKaraoke = async () => {
     if (isGeneratingKaraoke) return;
     if (!activeGuildId || !currentTrack.url) {
