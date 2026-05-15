@@ -302,8 +302,16 @@ const Index = () => {
   const playlistSearch = useQuery({
     queryKey: ["playlist-search", playlistBuilderQuery],
     enabled: playlistBuilderQuery.trim().length > 1,
-    queryFn: () => voxariaApi.searchCatalog(playlistBuilderQuery.trim()),
+    queryFn: async () => {
+      try {
+        return await voxariaApi.searchCatalog(playlistBuilderQuery.trim());
+      } catch (error) {
+        console.error("Catalog search failed:", error);
+        return [];
+      }
+    },
     staleTime: 10000,
+    retry: 1,
   });
 
   const refreshAll = () => {
@@ -618,7 +626,10 @@ const Index = () => {
     savePresetMutation.mutate(label);
   };
 
-  const loadPreset = (preset: ApiPreset) => loadPresetMutation.mutate(preset.name);
+  const loadPreset = (preset: ApiPreset) => {
+    if (!preset.name?.trim()) return;
+    loadPresetMutation.mutate(preset.name.trim());
+  };
 
   const handleLyricSync = (idx: number, lineTimeMs: number | null) => {
     const clickedLineTime = lineTimeMs ?? idx * LYRIC_HOLD_WINDOW_MS;
