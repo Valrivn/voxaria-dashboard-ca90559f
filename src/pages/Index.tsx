@@ -404,25 +404,47 @@ const Index = () => {
     onError: () => toast({ title: "Delete failed", description: "Could not remove queue item.", variant: "destructive" }),
   });
 
-  const savePresetMutation = useMutation({
-    mutationFn: (name: string) => voxariaApi.savePreset(name),
-    onSuccess: () => {
-      toast({ title: "Preset saved" });
-      setPresetName("");
-      setSavePresetOpen(false);
-      void queryClient.invalidateQueries({ queryKey: ["presets"] });
+  const createPresetMutation = useMutation({
+    mutationFn: (name: string) => voxariaApi.createPreset(name),
+    onSuccess: async (_response, name) => {
+      toast({ title: "Playlist created" });
+      const trimmedName = name.trim();
+      setNewPresetName("");
+      await queryClient.invalidateQueries({ queryKey: ["presets"] });
+      const refreshed = (queryClient.getQueryData(["presets"]) as ApiPreset[] | undefined) ?? [];
+      const created = refreshed.find((preset) => preset.name === trimmedName);
+      if (created) setActivePresetId(getPresetId(created));
     },
-    onError: () => toast({ title: "Save failed", description: "Could not save preset.", variant: "destructive" }),
+    onError: () => toast({ title: "Create failed", description: "Could not create playlist.", variant: "destructive" }),
   });
 
-  const loadPresetMutation = useMutation({
-    mutationFn: (name: string) => voxariaApi.loadPreset(name),
+  const deletePresetMutation = useMutation({
+    mutationFn: (presetId: string) => voxariaApi.deletePreset(presetId),
     onSuccess: () => {
-      toast({ title: "Preset loaded" });
-      void queryClient.invalidateQueries({ queryKey: ["queue"] });
-      void queryClient.invalidateQueries({ queryKey: ["player"] });
+      toast({ title: "Playlist deleted" });
+      void queryClient.invalidateQueries({ queryKey: ["presets"] });
     },
-    onError: () => toast({ title: "Load failed", description: "Could not load preset.", variant: "destructive" }),
+    onError: () => toast({ title: "Delete failed", description: "Could not delete playlist.", variant: "destructive" }),
+  });
+
+  const addTrackToPresetMutation = useMutation({
+    mutationFn: ({ presetId, track }: { presetId: string; track: ApiSearchResult }) =>
+      voxariaApi.addTrackToPreset(presetId, track),
+    onSuccess: async () => {
+      toast({ title: "Track added" });
+      await queryClient.invalidateQueries({ queryKey: ["presets"] });
+    },
+    onError: () => toast({ title: "Add failed", description: "Could not add track to playlist.", variant: "destructive" }),
+  });
+
+  const removeTrackFromPresetMutation = useMutation({
+    mutationFn: ({ presetId, trackIndex }: { presetId: string; trackIndex: number }) =>
+      voxariaApi.removeTrackFromPreset(presetId, trackIndex),
+    onSuccess: async () => {
+      toast({ title: "Track removed" });
+      await queryClient.invalidateQueries({ queryKey: ["presets"] });
+    },
+    onError: () => toast({ title: "Remove failed", description: "Could not remove track.", variant: "destructive" }),
   });
 
   const shuffleQueueMutation = useMutation({
@@ -445,7 +467,12 @@ const Index = () => {
 
   const currentTrackKey = `${currentTrack.title}::${currentTrack.artist}`;
   const normalizedLyrics = useMemo(() => (lyricsData?.lines ?? []).map(parseLyricLine).filter((line) => line.text.length > 0), [lyricsData?.lines]);
-  const resolvedPlaylistTracks = customPlaylists[activePlaylist] ?? [];
+  const presetsData = presets.data ?? [];
+  const activePreset = useMemo(
+    () => presetsData.find((preset) => getPresetId(preset) === activePresetId) ?? null,
+    [presetsData, activePresetId],
+  );
+  const activePresetTracks = activePreset?.items ?? [];
 
   useEffect(() => {
     setLyricsData(null);
@@ -616,18 +643,41 @@ const Index = () => {
     [sessionUsers, currentUser?.id],
   );
 
-  const saveCurrentQueueAsPreset = (name: string) => {
-    const label = name.trim();
+  const createPreset = () => {
+    const label = newPresetName.trim();
     if (!label) {
-      toast({ title: "Name required", description: "Enter a playlist name before saving.", variant: "destructive" });
+      toast({ title: "Name required", description: "Enter a playlist name.", variant: "destructive" });
       return;
     }
-    savePresetMutation.mutate(label);
+    createPresetMutation.mutate(label);
   };
 
-  const loadPreset = (preset: ApiPreset) => {
-    if (!preset.name?.trim()) return;
-    loadPresetMutation.mutate(preset.name.trim());
+  const addTrackToActivePreset = (track: ApiSearchResult) => {
+    if (!activePreset) {
+      toast({ title: "Select a playlist", description: "Create or pick a playlist first.", variant: "destructive" });
+      return;
+    }
+
+    const presetId = getPresetId(activePreset);
+    addTrackToPresetMutation.mutate({ presetId, track });
+  };
+
+  const removeTrackFromActivePreset = (trackIndex: number) => {
+    if (!activePreset) return;
+    const presetId = getPresetId(activePreset);
+    removeTrackFromPresetMutation.mutate({ presetId, trackIndex });
+  };
+
+  const deletePreset = (preset: ApiPreset) => {
+    const presetId = getPresetId(preset);
+    deletePresetMutation.mutate(presetId, {
+      onSuccess: () => {
+        if (activePresetId === presetId) {
+          const remaining = presetsData.filter((item) => getPresetId(item) !== presetId);
+          setActivePresetId(remaining[0] ? getPresetId(remaining[0]) : null);
+        }
+      },
+    });
   };
 
   const handleLyricSync = (idx: number, lineTimeMs: number | null) => {
@@ -791,10 +841,16 @@ const Index = () => {
     return NOTE_NAMES[((midi % 12) + 12) % 12];
   }, [detectedPitchHz]);
 
-  const playlistNames = useMemo(() => {
-    const names = Object.keys(customPlaylists);
-    return names.length ? names : [activePlaylist];
-  }, [customPlaylists, activePlaylist]);
+  useEffect(() => {
+    if (!presetsData.length) {
+      setActivePresetId(null);
+      return;
+    }
+
+    if (!activePresetId || !presetsData.some((preset) => getPresetId(preset) === activePresetId)) {
+      setActivePresetId(getPresetId(presetsData[0]));
+    }
+  }, [presetsData, activePresetId]);
 
   useEffect(() => {
     karaokeScoreRef.current = karaokeScore;
