@@ -208,8 +208,6 @@ const Index = () => {
     return Number.isFinite(parsed) ? parsed : LYRIC_OFFSET_DEFAULT_MS;
   });
   const [rttCompensationMs, setRttCompensationMs] = useState(0);
-  const [savePresetOpen, setSavePresetOpen] = useState(false);
-  const [presetName, setPresetName] = useState("");
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [lyricsOpen, setLyricsOpen] = useState(true);
   const [karaokeEnabled, setKaraokeEnabled] = useState(false);
@@ -219,9 +217,8 @@ const Index = () => {
   const [scoreSummaryOpen, setScoreSummaryOpen] = useState(false);
   const [detectedPitchHz, setDetectedPitchHz] = useState<number | null>(null);
   const [playlistBuilderQuery, setPlaylistBuilderQuery] = useState("");
-  const [playlistName, setPlaylistName] = useState("My Playlist");
-  const [customPlaylists, setCustomPlaylists] = useState<Record<string, ApiSearchResult[]>>({});
-  const [activePlaylist, setActivePlaylist] = useState("My Playlist");
+  const [newPresetName, setNewPresetName] = useState("");
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [isFetchingLyrics, setIsFetchingLyrics] = useState(false);
   const [isGeneratingKaraoke, setIsGeneratingKaraoke] = useState(false);
   const [currentPitchMap, setCurrentPitchMap] = useState<ApiPitchMap | null>(null);
