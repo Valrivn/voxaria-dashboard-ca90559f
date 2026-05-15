@@ -227,6 +227,8 @@ const pick = <T = unknown,>(
 const normalizePlayerPayload = (payload: RawPlayerPayload): ApiPlayer => {
   const data = payload?.data && typeof payload.data === "object" ? payload.data : {};
   const root = payload && typeof payload === "object" ? payload : {};
+  const dataInfo = data.info && typeof data.info === "object" ? (data.info as Record<string, unknown>) : {};
+  const rootInfo = root.info && typeof root.info === "object" ? (root.info as Record<string, unknown>) : {};
 
   const positionMs = toNumber(pick("position", data, root));
   const currentTimeSec = toNumber(pick("currentTime", data, root));
@@ -237,6 +239,15 @@ const normalizePlayerPayload = (payload: RawPlayerPayload): ApiPlayer => {
   const durationSec = durationMs !== null ? durationMs / 1000 : (totalTimeSec ?? 0);
   const isPaused = toBoolean(pick("paused", data, root)) ?? toBoolean(pick("isPaused", data, root)) ?? false;
   const playing = toBoolean(pick("playing", data, root)) ?? false;
+  const artworkCandidate =
+    toOptionalString(pick("thumbnail", data, root)) ??
+    toOptionalString(pick("art", data, root)) ??
+    toOptionalString(dataInfo.artworkUrl) ??
+    toOptionalString(rootInfo.artworkUrl) ??
+    toOptionalString(dataInfo.thumbnail) ??
+    toOptionalString(rootInfo.thumbnail) ??
+    toOptionalString(dataInfo.art) ??
+    toOptionalString(rootInfo.art);
 
   return {
     title: toStringValue(pick("title", data, root)),
@@ -256,13 +267,49 @@ const normalizePlayerPayload = (payload: RawPlayerPayload): ApiPlayer => {
     lastPausedAt: (pick<number | null>("lastPausedAt", data, root) ?? null) as number | null,
     isPaused,
     playing,
-    art: toOptionalString(pick("art", data, root)),
-    thumbnail: toOptionalString(pick("thumbnail", data, root)) ?? toOptionalString(pick("art", data, root)),
+    art: artworkCandidate,
+    thumbnail: artworkCandidate,
     requesterName:
       toOptionalString(pick("requesterName", data, root)) ?? toOptionalString(pick("requestedBy", data, root)),
     requesterAvatar: toOptionalString(pick("requesterAvatar", data, root)),
     volume: Math.max(0, Math.min(200, toNumber(pick("volume", data, root)) ?? 100)),
   };
+};
+
+const normalizeSearchCatalogPayload = (payload: unknown): ApiSearchResult[] => {
+  const root = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const raw = root.data ?? root.results ?? root.items ?? payload;
+  const list = Array.isArray(raw) ? raw : [];
+
+  return list
+    .map((item, index) => {
+      const result = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+
+      const id =
+        toStringValue(result.id) ??
+        toStringValue(result.identifier) ??
+        toStringValue(result.uri) ??
+        `search-${index}`;
+
+      const title = toStringValue(result.title) ?? "Unknown title";
+      const artist =
+        toStringValue(result.artist) ??
+        toStringValue(result.author) ??
+        toStringValue(result.requestedBy) ??
+        "Unknown artist";
+
+      return {
+        id,
+        title,
+        artist,
+        duration: toNumber(result.duration) ?? undefined,
+        thumbnail:
+          toOptionalString(result.thumbnail) ??
+          toOptionalString(result.artworkUrl) ??
+          toOptionalString(result.art),
+      };
+    })
+    .filter((track) => track.id && track.title);
 };
 
 const normalizePresetsPayload = (payload: unknown): ApiPreset[] => {
@@ -500,10 +547,10 @@ export const voxariaApi = {
       body: JSON.stringify({ title, artist }),
     }),
   searchCatalog: (query: string) =>
-    request<ApiSearchResult[]>(ENDPOINTS.searchResults, {
+    request<unknown>(ENDPOINTS.searchResults, {
       method: "POST",
       body: JSON.stringify({ query }),
-    }),
+    }).then(normalizeSearchCatalogPayload),
   getAuditLog: () => request<ApiAuditTrack[]>(ENDPOINTS.audit),
 };
 
