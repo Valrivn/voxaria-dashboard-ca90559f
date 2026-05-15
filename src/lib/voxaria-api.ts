@@ -118,11 +118,13 @@ export type ApiAuditTrack = {
 
 type PlaybackAction = "previous" | "play_pause" | "next" | "stop";
 
-// 🌐 Swap your old ngrok fallback link with your active Cloudflare link here:
-export const BASE_URL = import.meta.env.VITE_VOXARIA_API_BASE_URL?.trim() || "unhitched-shrink-dorsal.ngrok-free.dev";
+// 🌐 Fallback link points to your active permanent Ngrok domain
+export const BASE_URL =
+  import.meta.env.VITE_VOXARIA_API_BASE_URL?.trim() || "https://unhitched-shrink-dorsal.ngrok-free.dev";
 const OWNER_USER_ID = "owner";
 const OWNER_API_KEY = "owner";
 const DEFAULT_GUILD_ID = import.meta.env.VITE_VOXARIA_GUILD_ID?.trim() || "owner";
+
 const ENDPOINTS = {
   queue: "/music/queue",
   history: "/music/history",
@@ -161,6 +163,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
       headers: {
         "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true",
         "x-user-id": OWNER_USER_ID,
         "x-guild-id": DEFAULT_GUILD_ID,
         "x-api-key": OWNER_API_KEY,
@@ -306,6 +309,7 @@ async function postJson<TResponse, TBody extends Record<string, unknown>>(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true",
         "x-user-id": userId?.trim() || OWNER_USER_ID,
         "x-guild-id": guildId,
         "x-api-key": OWNER_API_KEY,
@@ -399,6 +403,7 @@ export const voxariaApi = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
           "x-user-id": userId,
           "x-guild-id": guildId,
           "x-api-key": OWNER_API_KEY,
@@ -426,6 +431,7 @@ export const voxariaApi = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true",
           "x-user-id": userId,
           "x-guild-id": guildId,
           "x-api-key": OWNER_API_KEY,
