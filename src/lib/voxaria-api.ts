@@ -203,6 +203,17 @@ const toBoolean = (value: unknown): boolean | null => {
   return null;
 };
 
+const toStringValue = (value: unknown): string | null => {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return null;
+};
+
+const toOptionalString = (value: unknown): string | undefined => toStringValue(value) ?? undefined;
+
 const pick = <T = unknown,>(
   key: string,
   data: Record<string, unknown>,
@@ -228,36 +239,48 @@ const normalizePlayerPayload = (payload: RawPlayerPayload): ApiPlayer => {
   const playing = toBoolean(pick("playing", data, root)) ?? false;
 
   return {
-    title: (pick<string | null>("title", data, root) ?? null) as string | null,
-    artist: (pick<string | null>("artist", data, root) ?? null) as string | null,
-    cleanedTitle: (pick<string | null>("cleanedTitle", data, root) ??
-      pick<string | null>("title", data, root) ??
-      null) as string | null,
-    cleanedArtist: (pick<string | null>("cleanedArtist", data, root) ??
-      pick<string | null>("artist", data, root) ??
-      null) as string | null,
-    url: (pick<string | null>("url", data, root) ?? null) as string | null,
-    uri: (pick<string | null>("uri", data, root) ?? null) as string | null,
-    trackUrl: (pick<string | null>("trackUrl", data, root) ??
-      pick<string | null>("url", data, root) ??
-      pick<string | null>("uri", data, root) ??
-      null) as string | null,
+    title: toStringValue(pick("title", data, root)),
+    artist: toStringValue(pick("artist", data, root)),
+    cleanedTitle: toStringValue(pick("cleanedTitle", data, root)) ?? toStringValue(pick("title", data, root)),
+    cleanedArtist:
+      toStringValue(pick("cleanedArtist", data, root)) ?? toStringValue(pick("artist", data, root)),
+    url: toStringValue(pick("url", data, root)),
+    uri: toStringValue(pick("uri", data, root)),
+    trackUrl:
+      toStringValue(pick("trackUrl", data, root)) ??
+      toStringValue(pick("url", data, root)) ??
+      toStringValue(pick("uri", data, root)),
     durationSec: Math.max(0, durationSec),
     positionSec: Math.max(0, positionSec),
     startTime: (pick<number | null>("startTime", data, root) ?? null) as number | null,
     lastPausedAt: (pick<number | null>("lastPausedAt", data, root) ?? null) as number | null,
     isPaused,
     playing,
-    art: (pick<string | undefined>("art", data, root) ?? undefined) as string | undefined,
-    thumbnail: (pick<string | undefined>("thumbnail", data, root) ??
-      pick<string | undefined>("art", data, root) ??
-      undefined) as string | undefined,
-    requesterName: (pick<string | undefined>("requesterName", data, root) ??
-      pick<string | undefined>("requestedBy", data, root) ??
-      undefined) as string | undefined,
-    requesterAvatar: (pick<string | undefined>("requesterAvatar", data, root) ?? undefined) as string | undefined,
+    art: toOptionalString(pick("art", data, root)),
+    thumbnail: toOptionalString(pick("thumbnail", data, root)) ?? toOptionalString(pick("art", data, root)),
+    requesterName:
+      toOptionalString(pick("requesterName", data, root)) ?? toOptionalString(pick("requestedBy", data, root)),
+    requesterAvatar: toOptionalString(pick("requesterAvatar", data, root)),
     volume: Math.max(0, Math.min(200, toNumber(pick("volume", data, root)) ?? 100)),
   };
+};
+
+const normalizePresetsPayload = (payload: unknown): ApiPreset[] => {
+  const root = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const raw = root.data ?? root.presets ?? root.items ?? payload;
+  const list = Array.isArray(raw) ? raw : [];
+
+  return list.map((item, index) => {
+    const preset = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+    const name = toStringValue(preset.name) ?? `Preset ${index + 1}`;
+    const tracks = toNumber(preset.tracks ?? preset.count) ?? 0;
+
+    return {
+      id: toOptionalString(preset.id),
+      name,
+      tracks,
+    };
+  });
 };
 
 const normalizeQueuePayload = (payload: RawQueuePayload): ApiTrack[] => {
