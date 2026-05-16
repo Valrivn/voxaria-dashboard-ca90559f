@@ -158,6 +158,33 @@ const ENDPOINTS = {
   audit: "/api/audit",
 } as const;
 
+export class ApiClientError extends Error {
+  status: number;
+  fallback: boolean;
+  apiMessage: string;
+
+  constructor(status: number, apiMessage: string) {
+    super(apiMessage || `API ${status}`);
+    this.name = "ApiClientError";
+    this.status = status;
+    this.apiMessage = apiMessage;
+    this.fallback = status >= 500;
+  }
+}
+
+const readErrorMessage = async (response: Response) => {
+  const raw = await response.text().catch(() => "");
+  if (!raw.trim()) return response.statusText || `API ${response.status}`;
+
+  try {
+    const parsed = JSON.parse(raw) as { error?: unknown; message?: unknown };
+    const candidate = toStringValue(parsed.error) ?? toStringValue(parsed.message);
+    return candidate ?? raw;
+  } catch {
+    return raw;
+  }
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!BASE_URL) throw new Error("Set VITE_VOXARIA_API_BASE_URL to enable live API mode.");
 
@@ -177,9 +204,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     });
 
     if (!response.ok) {
-      const body = await response.text();
-      console.error(`API Error: ${response.status} - ${body || response.statusText}`);
-      throw new Error(`API ${response.status}: ${body || "unknown error"}`);
+      const body = await readErrorMessage(response);
+      console.error(`API Error: ${response.status} - ${body}`);
+      throw new ApiClientError(response.status, body);
     }
 
     if (response.status === 204) return {} as T;
@@ -401,11 +428,9 @@ async function postJson<TResponse, TBody extends Record<string, unknown>>(
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}) as { error?: string });
-      const fallbackMessage =
-        typeof err === "object" && err && "error" in err ? String(err.error) : response.statusText;
+      const fallbackMessage = await readErrorMessage(response);
       console.error(`API Error: ${response.status} - ${fallbackMessage}`);
-      throw new Error(fallbackMessage || "Network response was not ok");
+      throw new ApiClientError(response.status, fallbackMessage);
     }
 
     return response.json() as Promise<TResponse>;
