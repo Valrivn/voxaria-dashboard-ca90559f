@@ -49,6 +49,7 @@ import { PitchDetector } from "pitchy";
 import { toast } from "@/hooks/use-toast";
 import { AuditLogViewer } from "@/components/AuditLogViewer";
 import {
+  ApiClientError,
   mockData,
   voxariaApi,
   type ApiKaraokeResponse,
@@ -99,6 +100,21 @@ const formatMsToClock = (value: number | undefined) => {
   const min = Math.floor(totalSec / 60);
   const sec = `${totalSec % 60}`.padStart(2, "0");
   return `${min}:${sec}`;
+};
+
+const resolveUiErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof ApiClientError) {
+    if (error.status === 404 && /no active voice connection/i.test(error.apiMessage)) {
+      return "No active voice connection. Join a voice channel first.";
+    }
+    if (error.status >= 500 && /lavalink/i.test(error.apiMessage)) {
+      return "Audio service unavailable (Lavalink). Please retry shortly.";
+    }
+    return error.apiMessage || fallback;
+  }
+
+  if (error instanceof Error && error.message?.trim()) return error.message;
+  return fallback;
 };
 
 const getPresetId = (preset: ApiPreset) => preset.id ?? preset.name;
@@ -339,7 +355,11 @@ const Index = () => {
     },
     onError: (error) => {
       console.log("Song request failed:", error instanceof Error ? error.message : error);
-      toast({ title: "Request failed", description: "Could not submit request.", variant: "destructive" });
+      toast({
+        title: "Request failed",
+        description: resolveUiErrorMessage(error, "Could not submit request."),
+        variant: "destructive",
+      });
     },
   });
 
@@ -366,7 +386,12 @@ const Index = () => {
   const summonBotMutation = useMutation({
     mutationFn: ({ guildId }: { guildId: string }) => voxariaApi.summonBot(guildId),
     onSuccess: () => toast({ title: "Summon sent", description: "Voxaria join request sent." }),
-    onError: () => toast({ title: "Summon failed", description: "Could not send join request.", variant: "destructive" }),
+    onError: (error) =>
+      toast({
+        title: "Summon failed",
+        description: resolveUiErrorMessage(error, "Could not send join request."),
+        variant: "destructive",
+      }),
   });
 
   const leaveMutation = useMutation({
