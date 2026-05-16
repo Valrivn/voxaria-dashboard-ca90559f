@@ -150,9 +150,8 @@ const ENDPOINTS = {
   presetsSave: "/presets/save",
   presetsLoad: "/presets/load",
   presetsCreate: "/presets/create",
-  presetsTrackAdd: "/presets/track/add",
-  presetsTrackRemove: "/presets/track/remove",
   presetsDelete: "/presets/delete",
+  searchOnly: "/music/search-only",
   pitchMap: "/music/pitch-map",
   searchResults: "/music/search/results",
   audit: "/api/audit",
@@ -584,16 +583,21 @@ export const voxariaApi = {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
-  addTrackToPreset: (presetId: string, track: ApiSearchResult) =>
-    request<{ ok: boolean; preset?: ApiPreset }>(ENDPOINTS.presetsTrackAdd, {
+  searchOnly: (query: string) =>
+    request<unknown>(ENDPOINTS.searchOnly, {
       method: "POST",
-      body: JSON.stringify({ presetId, track }),
+      body: JSON.stringify({ query }),
+    }).then(normalizeSearchCatalogPayload),
+  addTrackToPreset: (presetId: string, track: ApiSearchResult) =>
+    request<{ ok: boolean; preset?: ApiPreset }>(`/presets/${encodeURIComponent(presetId)}/add`, {
+      method: "POST",
+      body: JSON.stringify({ track }),
     }),
   removeTrackFromPreset: (presetId: string, trackIndex: number) =>
-    request<{ ok: boolean; preset?: ApiPreset }>(ENDPOINTS.presetsTrackRemove, {
-      method: "POST",
-      body: JSON.stringify({ presetId, trackIndex }),
-    }),
+    request<{ ok: boolean; preset?: ApiPreset }>(
+      `/presets/${encodeURIComponent(presetId)}/remove/${encodeURIComponent(String(trackIndex))}`,
+      { method: "DELETE" },
+    ),
   deletePreset: (presetId: string) =>
     request<{ ok: boolean }>(ENDPOINTS.presetsDelete, {
       method: "DELETE",
