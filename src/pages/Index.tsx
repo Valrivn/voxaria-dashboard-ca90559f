@@ -235,6 +235,7 @@ const Index = () => {
   const [scoreSummaryOpen, setScoreSummaryOpen] = useState(false);
   const [detectedPitchHz, setDetectedPitchHz] = useState<number | null>(null);
   const [playlistBuilderQuery, setPlaylistBuilderQuery] = useState("");
+  const [debouncedPlaylistQuery, setDebouncedPlaylistQuery] = useState("");
   const [newPresetName, setNewPresetName] = useState("");
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [isFetchingLyrics, setIsFetchingLyrics] = useState(false);
@@ -314,12 +315,21 @@ const Index = () => {
     if (fromEnv) return fromEnv;
     return "owner";
   }, [settings.data]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedPlaylistQuery(playlistBuilderQuery.trim());
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [playlistBuilderQuery]);
+
   const playlistSearch = useQuery({
-    queryKey: ["playlist-search", playlistBuilderQuery],
-    enabled: playlistBuilderQuery.trim().length > 1,
+    queryKey: ["playlist-search", debouncedPlaylistQuery],
+    enabled: debouncedPlaylistQuery.length > 1,
     queryFn: async () => {
       try {
-        return await voxariaApi.searchCatalog(playlistBuilderQuery.trim());
+        return await voxariaApi.searchOnly(debouncedPlaylistQuery);
       } catch (error) {
         console.error("Catalog search failed:", error);
         return [];
@@ -458,6 +468,7 @@ const Index = () => {
     onSuccess: async () => {
       toast({ title: "Track added" });
       await queryClient.invalidateQueries({ queryKey: ["presets"] });
+      await queryClient.refetchQueries({ queryKey: ["presets"], type: "active" });
     },
     onError: () => toast({ title: "Add failed", description: "Could not add track to playlist.", variant: "destructive" }),
   });
@@ -468,6 +479,7 @@ const Index = () => {
     onSuccess: async () => {
       toast({ title: "Track removed" });
       await queryClient.invalidateQueries({ queryKey: ["presets"] });
+      await queryClient.refetchQueries({ queryKey: ["presets"], type: "active" });
     },
     onError: () => toast({ title: "Remove failed", description: "Could not remove track.", variant: "destructive" }),
   });
