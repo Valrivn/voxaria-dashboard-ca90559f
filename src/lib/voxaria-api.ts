@@ -593,6 +593,11 @@ export const voxariaApi = {
       method: "POST",
       body: JSON.stringify({ track }),
     }),
+  importPlaylistToPreset: (presetId: string, url: string) =>
+    request<{ ok: boolean; added?: number; preset?: ApiPreset }>(`/presets/${encodeURIComponent(presetId)}/import`, {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    }),
   removeTrackFromPreset: (presetId: string, trackIndex: number) =>
     request<{ ok: boolean; preset?: ApiPreset }>(
       `/presets/${encodeURIComponent(presetId)}/remove/${encodeURIComponent(String(trackIndex))}`,

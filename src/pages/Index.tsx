@@ -236,6 +236,7 @@ const Index = () => {
   const [detectedPitchHz, setDetectedPitchHz] = useState<number | null>(null);
   const [playlistBuilderQuery, setPlaylistBuilderQuery] = useState("");
   const [debouncedPlaylistQuery, setDebouncedPlaylistQuery] = useState("");
+  const [playlistImportUrl, setPlaylistImportUrl] = useState("");
   const [newPresetName, setNewPresetName] = useState("");
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [isFetchingLyrics, setIsFetchingLyrics] = useState(false);
@@ -319,7 +320,7 @@ const Index = () => {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedPlaylistQuery(playlistBuilderQuery.trim());
-    }, 300);
+    }, 500);
 
     return () => window.clearTimeout(timer);
   }, [playlistBuilderQuery]);
@@ -482,6 +483,26 @@ const Index = () => {
       await queryClient.refetchQueries({ queryKey: ["presets"], type: "active" });
     },
     onError: () => toast({ title: "Remove failed", description: "Could not remove track.", variant: "destructive" }),
+  });
+
+  const importPlaylistToPresetMutation = useMutation({
+    mutationFn: ({ presetId, url }: { presetId: string; url: string }) => voxariaApi.importPlaylistToPreset(presetId, url),
+    onSuccess: async (response) => {
+      const addedCount = response?.added ?? 0;
+      toast({
+        title: "Playlist imported",
+        description: `Added ${addedCount} track${addedCount === 1 ? "" : "s"}.`,
+      });
+      setPlaylistImportUrl("");
+      await queryClient.invalidateQueries({ queryKey: ["presets"] });
+      await queryClient.refetchQueries({ queryKey: ["presets"], type: "active" });
+    },
+    onError: () =>
+      toast({
+        title: "Import failed",
+        description: "Could not import playlist URL.",
+        variant: "destructive",
+      }),
   });
 
   const shuffleQueueMutation = useMutation({
@@ -703,6 +724,22 @@ const Index = () => {
     if (!activePreset) return;
     const presetId = getPresetId(activePreset);
     removeTrackFromPresetMutation.mutate({ presetId, trackIndex });
+  };
+
+  const importExternalPlaylist = () => {
+    if (!activePreset) {
+      toast({ title: "Select a playlist", description: "Create or pick a playlist first.", variant: "destructive" });
+      return;
+    }
+
+    const url = playlistImportUrl.trim();
+    if (!url) {
+      toast({ title: "URL required", description: "Paste a playlist URL to import.", variant: "destructive" });
+      return;
+    }
+
+    const presetId = getPresetId(activePreset);
+    importPlaylistToPresetMutation.mutate({ presetId, url });
   };
 
   const deletePreset = (preset: ApiPreset) => {
@@ -1498,41 +1535,83 @@ const Index = () => {
                     {activePreset ? (
                       <>
                         <p className="mb-2 text-xs text-muted-foreground">Editing: {activePreset.name}</p>
-                        <Input
-                          value={playlistBuilderQuery}
-                          onChange={(e) => setPlaylistBuilderQuery(e.target.value)}
-                          placeholder="Search catalog and click Add to append to this playlist..."
-                          className="mb-2 h-9 bg-panel-soft/60"
-                        />
+                        <div className="relative mb-3">
+                          <Input
+                            value={playlistBuilderQuery}
+                            onChange={(e) => setPlaylistBuilderQuery(e.target.value)}
+                            placeholder="Search catalog and add tracks to this playlist..."
+                            className="h-9 bg-panel-soft/60"
+                          />
 
-                        <div className="mb-3 space-y-2" style={{ maxHeight: 180, overflowY: "auto" }}>
-                          {playlistSearch.isError ? (
-                            <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">Service Unavailable</p>
-                          ) : (
-                            (playlistSearch.data ?? []).map((track) => (
-                              <div key={track.id} className="flex items-center gap-2 rounded-md border border-border/70 bg-panel-soft/70 p-2">
-                                {track.thumbnail ? (
-                                  <img src={track.thumbnail} alt={`${track.title} thumbnail`} loading="lazy" className="h-10 w-10 rounded object-cover" />
-                                ) : (
-                                  <div className="flex h-10 w-10 items-center justify-center rounded border border-border/70 bg-panel">
-                                    <Disc3 className="h-4 w-4 text-muted-foreground" />
+                          {playlistBuilderQuery.trim().length > 1 && (
+                            <div className="absolute left-0 right-0 z-20 mt-1 max-h-56 space-y-2 overflow-y-auto rounded-md border border-border/70 bg-panel p-2 shadow-lg">
+                              {playlistSearch.isLoading ? (
+                                <p className="rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2 text-xs text-muted-foreground">
+                                  Searching...
+                                </p>
+                              ) : playlistSearch.isError ? (
+                                <p className="rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2 text-xs text-muted-foreground">
+                                  Service Unavailable
+                                </p>
+                              ) : (playlistSearch.data ?? []).length ? (
+                                (playlistSearch.data ?? []).map((track) => (
+                                  <div key={track.id} className="flex items-center gap-2 rounded-md border border-border/70 bg-panel-soft/70 p-2">
+                                    {track.thumbnail ? (
+                                      <img src={track.thumbnail} alt={`${track.title} thumbnail`} loading="lazy" className="h-10 w-10 rounded object-cover" />
+                                    ) : (
+                                      <div className="flex h-10 w-10 items-center justify-center rounded border border-border/70 bg-panel">
+                                        <Disc3 className="h-4 w-4 text-muted-foreground" />
+                                      </div>
+                                    )}
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-xs font-semibold text-foreground">{track.title}</p>
+                                      <p className="truncate text-[11px] text-muted-foreground">{track.artist}</p>
+                                    </div>
+                                    <Button
+                                      size="icon"
+                                      className="h-8 w-8 neon-glow"
+                                      onClick={() => addTrackToActivePreset(track)}
+                                      disabled={addTrackToPresetMutation.isPending}
+                                      aria-label={`Add ${track.title} to playlist`}
+                                    >
+                                      <Plus className="h-4 w-4" />
+                                    </Button>
                                   </div>
-                                )}
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate text-xs font-semibold text-foreground">{track.title}</p>
-                                  <p className="truncate text-[11px] text-muted-foreground">{track.artist}</p>
-                                </div>
-                                <Button
-                                  size="sm"
-                                  className="h-7 neon-glow"
-                                  onClick={() => addTrackToActivePreset(track)}
-                                  disabled={addTrackToPresetMutation.isPending}
-                                >
-                                  Add
-                                </Button>
-                              </div>
-                            ))
+                                ))
+                              ) : (
+                                <p className="rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2 text-xs text-muted-foreground">
+                                  No matches found.
+                                </p>
+                              )}
+                            </div>
                           )}
+                        </div>
+
+                        <div className="mb-3 rounded-md border border-primary/35 bg-accent/20 p-3">
+                          <p className="mb-2 text-xs font-semibold text-primary">Import External Playlist</p>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              value={playlistImportUrl}
+                              onChange={(e) => setPlaylistImportUrl(e.target.value)}
+                              placeholder="Paste YouTube or Spotify playlist URL"
+                              className="h-9 bg-panel-soft/60"
+                            />
+                            <Button
+                              type="button"
+                              onClick={importExternalPlaylist}
+                              disabled={importPlaylistToPresetMutation.isPending}
+                              className="h-9"
+                            >
+                              {importPlaylistToPresetMutation.isPending ? (
+                                <span className="inline-flex items-center gap-2">
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  Importing...
+                                </span>
+                              ) : (
+                                "Import Playlist"
+                              )}
+                            </Button>
+                          </div>
                         </div>
 
                         <div className="space-y-2" style={{ maxHeight: 260, overflowY: "auto" }}>
