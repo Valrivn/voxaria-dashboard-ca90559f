@@ -236,6 +236,7 @@ const Index = () => {
   const [detectedPitchHz, setDetectedPitchHz] = useState<number | null>(null);
   const [playlistBuilderQuery, setPlaylistBuilderQuery] = useState("");
   const [debouncedPlaylistQuery, setDebouncedPlaylistQuery] = useState("");
+  const [playlistImportUrl, setPlaylistImportUrl] = useState("");
   const [newPresetName, setNewPresetName] = useState("");
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [isFetchingLyrics, setIsFetchingLyrics] = useState(false);
@@ -319,7 +320,7 @@ const Index = () => {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedPlaylistQuery(playlistBuilderQuery.trim());
-    }, 300);
+    }, 500);
 
     return () => window.clearTimeout(timer);
   }, [playlistBuilderQuery]);
@@ -482,6 +483,26 @@ const Index = () => {
       await queryClient.refetchQueries({ queryKey: ["presets"], type: "active" });
     },
     onError: () => toast({ title: "Remove failed", description: "Could not remove track.", variant: "destructive" }),
+  });
+
+  const importPlaylistToPresetMutation = useMutation({
+    mutationFn: ({ presetId, url }: { presetId: string; url: string }) => voxariaApi.importPlaylistToPreset(presetId, url),
+    onSuccess: async (response) => {
+      const addedCount = response?.added ?? 0;
+      toast({
+        title: "Playlist imported",
+        description: `Added ${addedCount} track${addedCount === 1 ? "" : "s"}.`,
+      });
+      setPlaylistImportUrl("");
+      await queryClient.invalidateQueries({ queryKey: ["presets"] });
+      await queryClient.refetchQueries({ queryKey: ["presets"], type: "active" });
+    },
+    onError: () =>
+      toast({
+        title: "Import failed",
+        description: "Could not import playlist URL.",
+        variant: "destructive",
+      }),
   });
 
   const shuffleQueueMutation = useMutation({
@@ -703,6 +724,22 @@ const Index = () => {
     if (!activePreset) return;
     const presetId = getPresetId(activePreset);
     removeTrackFromPresetMutation.mutate({ presetId, trackIndex });
+  };
+
+  const importExternalPlaylist = () => {
+    if (!activePreset) {
+      toast({ title: "Select a playlist", description: "Create or pick a playlist first.", variant: "destructive" });
+      return;
+    }
+
+    const url = playlistImportUrl.trim();
+    if (!url) {
+      toast({ title: "URL required", description: "Paste a playlist URL to import.", variant: "destructive" });
+      return;
+    }
+
+    const presetId = getPresetId(activePreset);
+    importPlaylistToPresetMutation.mutate({ presetId, url });
   };
 
   const deletePreset = (preset: ApiPreset) => {
