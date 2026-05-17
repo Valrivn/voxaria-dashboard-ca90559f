@@ -11,6 +11,7 @@ import {
   Mic,
   MicOff,
   LogOut,
+  Music,
   Pause,
   Play,
   Plus,
@@ -50,6 +51,7 @@ import { toast } from "@/hooks/use-toast";
 import { AuditLogViewer } from "@/components/AuditLogViewer";
 import {
   ApiClientError,
+  BASE_URL,
   mockData,
   voxariaApi,
   type ApiKaraokeResponse,
@@ -212,6 +214,7 @@ const queueRow = (
 
 const Index = () => {
   const queryClient = useQueryClient();
+  const API_BASE_URL = BASE_URL;
 
   const [searchTerm, setSearchTerm] = useState("");
   const [requestTerm, setRequestTerm] = useState("");
@@ -724,6 +727,33 @@ const Index = () => {
     if (!activePreset) return;
     const presetId = getPresetId(activePreset);
     removeTrackFromPresetMutation.mutate({ presetId, trackIndex });
+  };
+
+  const handleDeployToQueue = async (tracks: any[]) => {
+    if (!tracks || tracks.length === 0) {
+      toast({ title: "No tracks available to deploy.", variant: "destructive" });
+      return;
+    }
+
+    toast({ title: "Deploying playlist to live Discord queue..." });
+
+    try {
+      for (const track of tracks) {
+        await fetch(`${API_BASE_URL}/music/request`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true",
+          },
+          body: JSON.stringify({
+            query: track.url || track.title,
+          }),
+        });
+      }
+      toast({ title: "Entire playlist successfully appended to the live queue!" });
+    } catch (error) {
+      toast({ title: "An error occurred while deploying the playlist.", variant: "destructive" });
+    }
   };
 
   const importExternalPlaylist = () => {
