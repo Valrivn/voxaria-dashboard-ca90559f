@@ -1254,47 +1254,49 @@ const Index = () => {
                   </div>
                 </div>
 
-                <Collapsible open={lyricsOpen} onOpenChange={setLyricsOpen} className="min-h-0 flex-1 rounded-md border border-border/70 bg-panel/75">
-                  <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium text-primary hover:bg-accent/25">
-                    <span>Lyrics / Karaoke</span>
-                    {lyricsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="h-[380px] border-t border-border/70 px-2 py-2">
-                    <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
-                      <div className="space-y-2">
-                        {normalizedLyrics.length ? (
-                          normalizedLyrics.map((line, idx) => (
-                            <button
-                              key={`${line.text}-${idx}`}
-                              data-lyric-index={idx}
-                              data-lyric-time={line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS}
-                              onClick={() => handleLyricSync(idx, line.timeMs)}
-                              className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
-                                idx === activeLine
-                                  ? "border-l-[4px] bg-accent/35 text-primary neon-glow neon-text"
-                                  : "border-transparent text-foreground/85 hover:bg-muted/50 hover:text-foreground"
-                              }`}
-                              style={
-                                idx === activeLine
-                                  ? {
-                                      borderLeftColor: "#39ff14",
-                                      textShadow: "0 0 10px rgba(57, 255, 20, 0.8)",
-                                    }
-                                  : undefined
-                              }
-                            >
-                              {line.text}
-                            </button>
-                          ))
-                        ) : (
-                          <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
-                            {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
-                          </p>
-                        )}
+                {isKaraokeActive && (
+                  <Collapsible open={lyricsOpen} onOpenChange={setLyricsOpen} className="min-h-0 flex-1 rounded-md border border-border/70 bg-panel/75">
+                    <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium text-primary hover:bg-accent/25">
+                      <span className="flex items-center gap-2"><Music size={18} /> Live Karaoke Lyrics</span>
+                      {lyricsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="h-[380px] border-t border-border/70 px-2 py-2">
+                      <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
+                        <div className="space-y-2">
+                          {normalizedLyrics.length ? (
+                            normalizedLyrics.map((line, idx) => (
+                              <button
+                                key={`${line.text}-${idx}`}
+                                data-lyric-index={idx}
+                                data-lyric-time={line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS}
+                                onClick={() => handleLyricSync(idx, line.timeMs)}
+                                className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
+                                  idx === activeLine
+                                    ? "border-l-[4px] bg-accent/35 text-primary neon-glow neon-text"
+                                    : "border-transparent text-foreground/85 hover:bg-muted/50 hover:text-foreground"
+                                }`}
+                                style={
+                                  idx === activeLine
+                                    ? {
+                                        borderLeftColor: "#39ff14",
+                                        textShadow: "0 0 10px rgba(57, 255, 20, 0.8)",
+                                      }
+                                    : undefined
+                                }
+                              >
+                                {line.text}
+                              </button>
+                            ))
+                          ) : (
+                            <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
+                              {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
               </article>
 
               <aside className="flex min-h-[520px] flex-col gap-4 rounded-md border border-border/70 bg-panel-soft/70 p-3 shadow-soft">
