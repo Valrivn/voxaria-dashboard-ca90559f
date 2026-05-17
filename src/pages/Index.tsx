@@ -11,6 +11,7 @@ import {
   Mic,
   MicOff,
   LogOut,
+  Music,
   Pause,
   Play,
   Plus,
@@ -50,6 +51,7 @@ import { toast } from "@/hooks/use-toast";
 import { AuditLogViewer } from "@/components/AuditLogViewer";
 import {
   ApiClientError,
+  BASE_URL,
   mockData,
   voxariaApi,
   type ApiKaraokeResponse,
@@ -212,6 +214,7 @@ const queueRow = (
 
 const Index = () => {
   const queryClient = useQueryClient();
+  const API_BASE_URL = BASE_URL;
 
   const [searchTerm, setSearchTerm] = useState("");
   const [requestTerm, setRequestTerm] = useState("");
@@ -694,6 +697,7 @@ const Index = () => {
   const playerUnavailable = player.isError;
   const queueUnavailable = queue.isError;
   const lyricsServiceUnavailable = false;
+  const isKaraokeActive = karaokeEnabled;
   const canManageQueue = Boolean(currentUser?.permissions.dj || currentUser?.permissions.staff);
   const canViewStaffTab = (currentUser?.roleLevel ?? 0) >= 2;
   const manageableUsers = useMemo(
@@ -724,6 +728,33 @@ const Index = () => {
     if (!activePreset) return;
     const presetId = getPresetId(activePreset);
     removeTrackFromPresetMutation.mutate({ presetId, trackIndex });
+  };
+
+  const handleDeployToQueue = async (tracks: any[]) => {
+    if (!tracks || tracks.length === 0) {
+      toast({ title: "No tracks available to deploy.", variant: "destructive" });
+      return;
+    }
+
+    toast({ title: "Deploying playlist to live Discord queue..." });
+
+    try {
+      for (const track of tracks) {
+        await fetch(`${API_BASE_URL}/music/request`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true",
+          },
+          body: JSON.stringify({
+            query: track.url || track.title,
+          }),
+        });
+      }
+      toast({ title: "Entire playlist successfully appended to the live queue!" });
+    } catch (error) {
+      toast({ title: "An error occurred while deploying the playlist.", variant: "destructive" });
+    }
   };
 
   const importExternalPlaylist = () => {
@@ -1223,47 +1254,49 @@ const Index = () => {
                   </div>
                 </div>
 
-                <Collapsible open={lyricsOpen} onOpenChange={setLyricsOpen} className="min-h-0 flex-1 rounded-md border border-border/70 bg-panel/75">
-                  <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium text-primary hover:bg-accent/25">
-                    <span>Lyrics / Karaoke</span>
-                    {lyricsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="h-[380px] border-t border-border/70 px-2 py-2">
-                    <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
-                      <div className="space-y-2">
-                        {normalizedLyrics.length ? (
-                          normalizedLyrics.map((line, idx) => (
-                            <button
-                              key={`${line.text}-${idx}`}
-                              data-lyric-index={idx}
-                              data-lyric-time={line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS}
-                              onClick={() => handleLyricSync(idx, line.timeMs)}
-                              className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
-                                idx === activeLine
-                                  ? "border-l-[4px] bg-accent/35 text-primary neon-glow neon-text"
-                                  : "border-transparent text-foreground/85 hover:bg-muted/50 hover:text-foreground"
-                              }`}
-                              style={
-                                idx === activeLine
-                                  ? {
-                                      borderLeftColor: "#39ff14",
-                                      textShadow: "0 0 10px rgba(57, 255, 20, 0.8)",
-                                    }
-                                  : undefined
-                              }
-                            >
-                              {line.text}
-                            </button>
-                          ))
-                        ) : (
-                          <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
-                            {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
-                          </p>
-                        )}
+                {isKaraokeActive && (
+                  <Collapsible open={lyricsOpen} onOpenChange={setLyricsOpen} className="min-h-0 flex-1 rounded-md border border-border/70 bg-panel/75">
+                    <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium text-primary hover:bg-accent/25">
+                      <span className="flex items-center gap-2"><Music size={18} /> Live Karaoke Lyrics</span>
+                      {lyricsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="h-[380px] border-t border-border/70 px-2 py-2">
+                      <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
+                        <div className="space-y-2">
+                          {normalizedLyrics.length ? (
+                            normalizedLyrics.map((line, idx) => (
+                              <button
+                                key={`${line.text}-${idx}`}
+                                data-lyric-index={idx}
+                                data-lyric-time={line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS}
+                                onClick={() => handleLyricSync(idx, line.timeMs)}
+                                className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
+                                  idx === activeLine
+                                    ? "border-l-[4px] bg-accent/35 text-primary neon-glow neon-text"
+                                    : "border-transparent text-foreground/85 hover:bg-muted/50 hover:text-foreground"
+                                }`}
+                                style={
+                                  idx === activeLine
+                                    ? {
+                                        borderLeftColor: "#39ff14",
+                                        textShadow: "0 0 10px rgba(57, 255, 20, 0.8)",
+                                      }
+                                    : undefined
+                                }
+                              >
+                                {line.text}
+                              </button>
+                            ))
+                          ) : (
+                            <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
+                              {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
               </article>
 
               <aside className="flex min-h-[520px] flex-col gap-4 rounded-md border border-border/70 bg-panel-soft/70 p-3 shadow-soft">
@@ -1613,6 +1646,13 @@ const Index = () => {
                             </Button>
                           </div>
                         </div>
+
+                        <button
+                          onClick={() => handleDeployToQueue(activePresetTracks as any[])}
+                          className="w-full mb-4 p-3 bg-neonGreen text-black font-bold rounded-xl hover:bg-neonGreen/80 transition-all flex items-center justify-center gap-2"
+                        >
+                          <Play size={18} /> Deploy Playlist to Live Bot Queue
+                        </button>
 
                         <div className="space-y-2" style={{ maxHeight: 260, overflowY: "auto" }}>
                           {activePresetTracks.length ? (
