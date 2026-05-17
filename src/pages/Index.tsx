@@ -697,6 +697,7 @@ const Index = () => {
   const playerUnavailable = player.isError;
   const queueUnavailable = queue.isError;
   const lyricsServiceUnavailable = false;
+  const isKaraokeActive = karaokeEnabled;
   const canManageQueue = Boolean(currentUser?.permissions.dj || currentUser?.permissions.staff);
   const canViewStaffTab = (currentUser?.roleLevel ?? 0) >= 2;
   const manageableUsers = useMemo(
@@ -1643,6 +1644,13 @@ const Index = () => {
                             </Button>
                           </div>
                         </div>
+
+                        <button
+                          onClick={() => handleDeployToQueue(activePresetTracks as any[])}
+                          className="w-full mb-4 p-3 bg-neonGreen text-black font-bold rounded-xl hover:bg-neonGreen/80 transition-all flex items-center justify-center gap-2"
+                        >
+                          <Play size={18} /> Deploy Playlist to Live Bot Queue
+                        </button>
 
                         <div className="space-y-2" style={{ maxHeight: 260, overflowY: "auto" }}>
                           {activePresetTracks.length ? (
