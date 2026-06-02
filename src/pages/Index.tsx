@@ -319,17 +319,47 @@ const Index = () => {
   });
   const presets = useQuery({ queryKey: ["presets"], queryFn: voxariaApi.getPresets, refetchInterval: 30000 });
   const activeGuildId = useMemo(() => {
-    const fromSettings = (settings.data as { guildId?: string } | undefined)?.guildId?.trim();
+    const settingsData = (settings.data as {
+      guildId?: string;
+      loggedInUser?: { discordId?: string; sessionToken?: string };
+      sessionToken?: string;
+    } | undefined) ?? { };
+
+    const fromSettings = settingsData.guildId?.trim();
     if (fromSettings) return fromSettings;
     const fromEnv = import.meta.env.VITE_VOXARIA_GUILD_ID?.trim();
     if (fromEnv) return fromEnv;
     return "owner";
   }, [settings.data]);
   const activeUserDiscordId = useMemo(
-    () => currentUser?.discordId?.trim() || currentUser?.id?.trim() || "owner",
-    [currentUser?.discordId, currentUser?.id],
+    () => {
+      const settingsData = (settings.data as {
+        loggedInUser?: { discordId?: string; sessionToken?: string };
+        sessionToken?: string;
+      } | undefined) ?? { };
+
+      return (
+        currentUser?.discordId?.trim() ||
+        settingsData.loggedInUser?.discordId?.trim() ||
+        currentUser?.id?.trim() ||
+        "owner"
+      );
+    },
+    [currentUser?.discordId, currentUser?.id, settings.data],
   );
-  const activeSessionToken = useMemo(() => currentUser?.sessionToken?.trim() || undefined, [currentUser?.sessionToken]);
+  const activeSessionToken = useMemo(() => {
+    const settingsData = (settings.data as {
+      loggedInUser?: { discordId?: string; sessionToken?: string };
+      sessionToken?: string;
+    } | undefined) ?? { };
+
+    return (
+      currentUser?.sessionToken?.trim() ||
+      settingsData.sessionToken?.trim() ||
+      settingsData.loggedInUser?.sessionToken?.trim() ||
+      undefined
+    );
+  }, [currentUser?.sessionToken, settings.data]);
 
   useEffect(() => {
     setApiAuthContext({
