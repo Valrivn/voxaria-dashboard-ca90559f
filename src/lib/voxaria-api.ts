@@ -25,7 +25,12 @@ export type ApiCache = {
 };
 
 export type ApiSettings = {
-  sessionRestoreEnabled: boolean;
+  guildId?: string;
+  sessionToken?: string;
+  loggedInUser?: {
+    discordId?: string;
+    sessionToken?: string;
+  };
 };
 
 export type ApiPlayer = {
@@ -155,7 +160,6 @@ const ENDPOINTS = {
   join: "/discord/join",
   leave: "/discord/leave",
   cleanCache: "/system/audio-cache/clean",
-  sessionRestore: "/system/settings/session-restore",
   volume: "/music/volume",
   lyrics: "/music/lyrics",
   queueReorder: "/queue/reorder",
