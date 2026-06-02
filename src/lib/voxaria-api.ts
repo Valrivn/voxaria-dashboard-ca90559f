@@ -126,6 +126,22 @@ const OWNER_USER_ID = "owner";
 const OWNER_API_KEY = "owner";
 const DEFAULT_GUILD_ID = import.meta.env.VITE_VOXARIA_GUILD_ID?.trim() || "owner";
 
+type ApiAuthContext = {
+  guildId?: string;
+  userId?: string;
+  sessionToken?: string;
+};
+
+let apiAuthContext: ApiAuthContext = {};
+
+export const setApiAuthContext = (context: ApiAuthContext) => {
+  apiAuthContext = {
+    guildId: context.guildId?.trim() || undefined,
+    userId: context.userId?.trim() || undefined,
+    sessionToken: context.sessionToken?.trim() || undefined,
+  };
+};
+
 const ENDPOINTS = {
   queue: "/music/queue",
   history: "/music/history",
@@ -189,15 +205,28 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   try {
     const extraHeaders = new Headers(init?.headers);
+    const activeGuildId = toStringValue(extraHeaders.get("x-guild-id")) ?? apiAuthContext.guildId ?? DEFAULT_GUILD_ID;
+    const activeUserId = toStringValue(extraHeaders.get("x-user-id")) ?? apiAuthContext.userId ?? OWNER_USER_ID;
+    const authHeader = toStringValue(extraHeaders.get("Authorization"));
+    const activeSessionToken =
+      (authHeader && authHeader.replace(/^Bearer\s+/i, "").trim()) || apiAuthContext.sessionToken;
+
+    const defaultHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+      "ngrok-skip-browser-warning": "true",
+      "x-user-id": activeUserId,
+      "x-guild-id": activeGuildId,
+      "x-api-key": OWNER_API_KEY,
+    };
+
+    if (activeSessionToken) {
+      defaultHeaders.Authorization = `Bearer ${activeSessionToken}`;
+    }
 
     const response = await fetch(`${BASE_URL}${path}`, {
       ...init,
       headers: {
-        "Content-Type": "application/json",
-        "ngrok-skip-browser-warning": "true",
-        "x-user-id": OWNER_USER_ID,
-        "x-guild-id": DEFAULT_GUILD_ID,
-        "x-api-key": OWNER_API_KEY,
+        ...defaultHeaders,
         ...Object.fromEntries(extraHeaders.entries()),
       },
     });
@@ -414,14 +443,19 @@ async function postJson<TResponse, TBody extends Record<string, unknown>>(
   userId?: string,
 ): Promise<TResponse> {
   try {
+    const activeGuildId = guildId?.trim() || apiAuthContext.guildId || DEFAULT_GUILD_ID;
+    const activeUserId = userId?.trim() || apiAuthContext.userId || OWNER_USER_ID;
+    const authHeader = apiAuthContext.sessionToken ? { Authorization: `Bearer ${apiAuthContext.sessionToken}` } : {};
+
     const response = await fetch(`${BASE_URL}${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "ngrok-skip-browser-warning": "true",
-        "x-user-id": userId?.trim() || OWNER_USER_ID,
-        "x-guild-id": guildId,
+        "x-user-id": activeUserId,
+        "x-guild-id": activeGuildId,
         "x-api-key": OWNER_API_KEY,
+        ...authHeader,
       },
       body: JSON.stringify(body),
     });
@@ -506,14 +540,19 @@ export const voxariaApi = {
     if (!normalizedTitle) throw new Error("Missing search query for lyrics");
 
     try {
+      const activeGuildId = guildId?.trim() || apiAuthContext.guildId || DEFAULT_GUILD_ID;
+      const activeUserId = userId?.trim() || apiAuthContext.userId || OWNER_USER_ID;
+      const authHeader = apiAuthContext.sessionToken ? { Authorization: `Bearer ${apiAuthContext.sessionToken}` } : {};
+
       const response = await fetch(`${BASE_URL}${ENDPOINTS.lyrics}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "ngrok-skip-browser-warning": "true",
-          "x-user-id": userId,
-          "x-guild-id": guildId,
+          "x-user-id": activeUserId,
+          "x-guild-id": activeGuildId,
           "x-api-key": OWNER_API_KEY,
+          ...authHeader,
         },
         body: JSON.stringify({ title: normalizedTitle, artist: normalizedArtist }),
       });
@@ -534,16 +573,21 @@ export const voxariaApi = {
     if (!guildId?.trim() || !trackUrl?.trim()) throw new Error("Missing guildId or trackUrl");
 
     try {
+      const activeGuildId = guildId?.trim() || apiAuthContext.guildId || DEFAULT_GUILD_ID;
+      const activeUserId = userId?.trim() || apiAuthContext.userId || OWNER_USER_ID;
+      const authHeader = apiAuthContext.sessionToken ? { Authorization: `Bearer ${apiAuthContext.sessionToken}` } : {};
+
       const response = await fetch(`${BASE_URL}/music/karaoke`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "ngrok-skip-browser-warning": "true",
-          "x-user-id": userId,
-          "x-guild-id": guildId,
+          "x-user-id": activeUserId,
+          "x-guild-id": activeGuildId,
           "x-api-key": OWNER_API_KEY,
+          ...authHeader,
         },
-        body: JSON.stringify({ guildId, trackUrl: trackUrl.trim() }),
+        body: JSON.stringify({ guildId: activeGuildId, trackUrl: trackUrl.trim() }),
       });
 
       if (!response.ok) {

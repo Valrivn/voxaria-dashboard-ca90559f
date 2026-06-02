@@ -53,6 +53,7 @@ import {
   ApiClientError,
   BASE_URL,
   mockData,
+  setApiAuthContext,
   voxariaApi,
   type ApiKaraokeResponse,
   type ApiLyrics,
@@ -66,6 +67,8 @@ type NavItem = { label: string; icon: typeof Disc3 };
 type LyricLine = { text: string; timeMs: number | null };
 type SessionUser = {
   id: string;
+  discordId?: string;
+  sessionToken?: string;
   name: string;
   roleLevel: number;
   permissions: {
@@ -271,18 +274,21 @@ const Index = () => {
   const [sessionUsers, setSessionUsers] = useState<SessionUser[]>([
     {
       id: "u1",
+      discordId: "u1",
       name: "Astra",
       roleLevel: 2,
       permissions: { dj: true, staff: true },
     },
     {
       id: "u2",
+      discordId: "u2",
       name: "Kai",
       roleLevel: 1,
       permissions: { dj: true, staff: false },
     },
     {
       id: "u3",
+      discordId: "u3",
       name: "Nyx",
       roleLevel: 0,
       permissions: { dj: false, staff: false },
@@ -313,12 +319,55 @@ const Index = () => {
   });
   const presets = useQuery({ queryKey: ["presets"], queryFn: voxariaApi.getPresets, refetchInterval: 30000 });
   const activeGuildId = useMemo(() => {
-    const fromSettings = (settings.data as { guildId?: string } | undefined)?.guildId?.trim();
+    const settingsData = (settings.data as {
+      guildId?: string;
+      loggedInUser?: { discordId?: string; sessionToken?: string };
+      sessionToken?: string;
+    } | undefined) ?? {};
+
+    const fromSettings = settingsData.guildId?.trim();
     if (fromSettings) return fromSettings;
     const fromEnv = import.meta.env.VITE_VOXARIA_GUILD_ID?.trim();
     if (fromEnv) return fromEnv;
     return "owner";
   }, [settings.data]);
+  const activeUserDiscordId = useMemo(
+    () => {
+      const settingsData = (settings.data as {
+        loggedInUser?: { discordId?: string; sessionToken?: string };
+        sessionToken?: string;
+      } | undefined) ?? {};
+
+      return (
+        currentUser?.discordId?.trim() ||
+        settingsData.loggedInUser?.discordId?.trim() ||
+        currentUser?.id?.trim() ||
+        "owner"
+      );
+    },
+    [currentUser?.discordId, currentUser?.id, settings.data],
+  );
+  const activeSessionToken = useMemo(() => {
+    const settingsData = (settings.data as {
+      loggedInUser?: { discordId?: string; sessionToken?: string };
+      sessionToken?: string;
+    } | undefined) ?? {};
+
+    return (
+      currentUser?.sessionToken?.trim() ||
+      settingsData.sessionToken?.trim() ||
+      settingsData.loggedInUser?.sessionToken?.trim() ||
+      undefined
+    );
+  }, [currentUser?.sessionToken, settings.data]);
+
+  useEffect(() => {
+    setApiAuthContext({
+      guildId: activeGuildId,
+      userId: activeUserDiscordId,
+      sessionToken: activeSessionToken,
+    });
+  }, [activeGuildId, activeSessionToken, activeUserDiscordId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -739,12 +788,17 @@ const Index = () => {
     toast({ title: "Deploying playlist to live Discord queue..." });
 
     try {
+      const authHeaders = activeSessionToken ? { Authorization: `Bearer ${activeSessionToken}` } : {};
+
       for (const track of tracks) {
         await fetch(`${API_BASE_URL}/music/request`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "ngrok-skip-browser-warning": "true",
+            "x-guild-id": activeGuildId,
+            "x-user-id": activeUserDiscordId,
+            ...authHeaders,
           },
           body: JSON.stringify({
             query: track.url || track.title,
