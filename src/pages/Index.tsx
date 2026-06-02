@@ -323,7 +323,7 @@ const Index = () => {
       guildId?: string;
       loggedInUser?: { discordId?: string; sessionToken?: string };
       sessionToken?: string;
-    } | undefined) ?? { };
+    } | undefined) ?? {};
 
     const fromSettings = settingsData.guildId?.trim();
     if (fromSettings) return fromSettings;
@@ -336,7 +336,7 @@ const Index = () => {
       const settingsData = (settings.data as {
         loggedInUser?: { discordId?: string; sessionToken?: string };
         sessionToken?: string;
-      } | undefined) ?? { };
+      } | undefined) ?? {};
 
       return (
         currentUser?.discordId?.trim() ||
@@ -351,7 +351,7 @@ const Index = () => {
     const settingsData = (settings.data as {
       loggedInUser?: { discordId?: string; sessionToken?: string };
       sessionToken?: string;
-    } | undefined) ?? { };
+    } | undefined) ?? {};
 
     return (
       currentUser?.sessionToken?.trim() ||
