@@ -25,7 +25,12 @@ export type ApiCache = {
 };
 
 export type ApiSettings = {
-  sessionRestoreEnabled: boolean;
+  guildId?: string;
+  sessionToken?: string;
+  loggedInUser?: {
+    discordId?: string;
+    sessionToken?: string;
+  };
 };
 
 export type ApiPlayer = {
@@ -155,7 +160,6 @@ const ENDPOINTS = {
   join: "/discord/join",
   leave: "/discord/leave",
   cleanCache: "/system/audio-cache/clean",
-  sessionRestore: "/system/settings/session-restore",
   volume: "/music/volume",
   lyrics: "/music/lyrics",
   queueReorder: "/queue/reorder",
@@ -519,11 +523,6 @@ export const voxariaApi = {
     postJson<{ ok: boolean; message?: string }, { guildId: string }>(ENDPOINTS.join, { guildId }, guildId, userId),
   leaveVoice: () => request<{ ok: boolean }>(ENDPOINTS.leave, { method: "POST" }),
   cleanAudioCache: () => request<{ ok: boolean; removedMb?: number }>(ENDPOINTS.cleanCache, { method: "POST" }),
-  setSessionRestore: (enabled: boolean) =>
-    request<{ ok: boolean; enabled: boolean }>(ENDPOINTS.sessionRestore, {
-      method: "POST",
-      body: JSON.stringify({ enabled }),
-    }),
   setVolume: (volume: number) =>
     request<{ ok: boolean; volume: number }>(ENDPOINTS.volume, {
       method: "POST",
@@ -698,7 +697,7 @@ export const mockData = {
   history: [] as ApiTrack[],
   status: { activeShard: 0, pingMs: 42, uptime: "24h 12m", online: true } as ApiStatus,
   cache: { sizeMb: 142, maxMb: 300 } as ApiCache,
-  settings: { sessionRestoreEnabled: true } as ApiSettings,
+  settings: {} as ApiSettings,
   player: {
     title: "Night Circuit",
     artist: "Mira Kade",
