@@ -758,12 +758,17 @@ const Index = () => {
     toast({ title: "Deploying playlist to live Discord queue..." });
 
     try {
+      const authHeaders = activeSessionToken ? { Authorization: `Bearer ${activeSessionToken}` } : {};
+
       for (const track of tracks) {
         await fetch(`${API_BASE_URL}/music/request`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "ngrok-skip-browser-warning": "true",
+            "x-guild-id": activeGuildId,
+            "x-user-id": activeUserDiscordId,
+            ...authHeaders,
           },
           body: JSON.stringify({
             query: track.url || track.title,
