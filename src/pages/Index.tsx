@@ -53,6 +53,7 @@ import {
   ApiClientError,
   BASE_URL,
   mockData,
+  setApiAuthContext,
   voxariaApi,
   type ApiKaraokeResponse,
   type ApiLyrics,
@@ -66,6 +67,8 @@ type NavItem = { label: string; icon: typeof Disc3 };
 type LyricLine = { text: string; timeMs: number | null };
 type SessionUser = {
   id: string;
+  discordId?: string;
+  sessionToken?: string;
   name: string;
   roleLevel: number;
   permissions: {
@@ -271,18 +274,21 @@ const Index = () => {
   const [sessionUsers, setSessionUsers] = useState<SessionUser[]>([
     {
       id: "u1",
+      discordId: "u1",
       name: "Astra",
       roleLevel: 2,
       permissions: { dj: true, staff: true },
     },
     {
       id: "u2",
+      discordId: "u2",
       name: "Kai",
       roleLevel: 1,
       permissions: { dj: true, staff: false },
     },
     {
       id: "u3",
+      discordId: "u3",
       name: "Nyx",
       roleLevel: 0,
       permissions: { dj: false, staff: false },
@@ -319,6 +325,19 @@ const Index = () => {
     if (fromEnv) return fromEnv;
     return "owner";
   }, [settings.data]);
+  const activeUserDiscordId = useMemo(
+    () => currentUser?.discordId?.trim() || currentUser?.id?.trim() || "owner",
+    [currentUser?.discordId, currentUser?.id],
+  );
+  const activeSessionToken = useMemo(() => currentUser?.sessionToken?.trim() || undefined, [currentUser?.sessionToken]);
+
+  useEffect(() => {
+    setApiAuthContext({
+      guildId: activeGuildId,
+      userId: activeUserDiscordId,
+      sessionToken: activeSessionToken,
+    });
+  }, [activeGuildId, activeSessionToken, activeUserDiscordId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
