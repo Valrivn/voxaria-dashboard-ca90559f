@@ -470,14 +470,6 @@ const Index = () => {
     },
   });
 
-  const sessionRestoreMutation = useMutation({
-    mutationFn: voxariaApi.setSessionRestore,
-    onSuccess: (d) => {
-      toast({ title: `Session Restore ${d.enabled ? "enabled" : "disabled"}` });
-      void queryClient.invalidateQueries({ queryKey: ["settings"] });
-    },
-  });
-
   const volumeMutation = useMutation({ mutationFn: voxariaApi.setVolume, onSuccess: refreshAll });
 
   const reorderQueueMutation = useMutation({
@@ -1470,65 +1462,41 @@ const Index = () => {
               </Button>
             </article>
 
-            <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft">
-              <Tabs defaultValue="system" className="space-y-3">
-                <TabsList className="h-9 w-full justify-start">
-                  <TabsTrigger value="system">System</TabsTrigger>
-                  {canViewStaffTab && <TabsTrigger value="staff">Staff</TabsTrigger>}
-                </TabsList>
-
-                <TabsContent value="system" className="mt-0">
-                  <h3 className="mb-2 text-sm font-semibold">System Settings</h3>
-                  <div className="flex items-center justify-between rounded-md border border-border/70 bg-panel p-3">
-                    <div>
-                      <p className="text-sm font-medium">Enable Session Restore</p>
-                      <p className="text-xs text-muted-foreground">Restore queue/session after reconnect.</p>
-                    </div>
-                    <Switch
-                      checked={settings.data?.sessionRestoreEnabled ?? false}
-                      onCheckedChange={(value) => sessionRestoreMutation.mutate(value)}
-                      disabled={sessionRestoreMutation.isPending}
-                    />
-                  </div>
-                </TabsContent>
-
-                {canViewStaffTab && (
-                  <TabsContent value="staff" className="mt-0 space-y-2">
-                    <h3 className="text-sm font-semibold">Session Permissions</h3>
-                    {manageableUsers.length ? (
-                      manageableUsers.map((user) => (
-                        <div key={user.id} className="rounded-md border border-border/70 bg-panel p-2.5">
-                          <div className="mb-2 flex items-center justify-between">
-                            <p className="text-sm font-medium text-foreground">{user.name}</p>
-                            <Badge variant="outline" className="border-primary/40 text-primary">Role {user.roleLevel}</Badge>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="flex items-center justify-between rounded-md border border-border/70 px-2 py-1.5">
-                              <span className="text-xs text-muted-foreground">DJ</span>
-                              <Switch
-                                checked={user.permissions.dj}
-                                onCheckedChange={() => toggleUserPermission(user.id, "dj")}
-                              />
-                            </div>
-                            <div className="flex items-center justify-between rounded-md border border-border/70 px-2 py-1.5">
-                              <span className="text-xs text-muted-foreground">Staff</span>
-                              <Switch
-                                checked={user.permissions.staff}
-                                onCheckedChange={() => toggleUserPermission(user.id, "staff")}
-                              />
-                            </div>
-                          </div>
+            {canViewStaffTab && (
+              <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft">
+                <h3 className="mb-2 text-sm font-semibold">Session Permissions</h3>
+                {manageableUsers.length ? (
+                  manageableUsers.map((user) => (
+                    <div key={user.id} className="mb-2 last:mb-0 rounded-md border border-border/70 bg-panel p-2.5">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-sm font-medium text-foreground">{user.name}</p>
+                        <Badge variant="outline" className="border-primary/40 text-primary">Role {user.roleLevel}</Badge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="flex items-center justify-between rounded-md border border-border/70 px-2 py-1.5">
+                          <span className="text-xs text-muted-foreground">DJ</span>
+                          <Switch
+                            checked={user.permissions.dj}
+                            onCheckedChange={() => toggleUserPermission(user.id, "dj")}
+                          />
                         </div>
-                      ))
-                    ) : (
-                      <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">
-                        No other users in this session.
-                      </p>
-                    )}
-                  </TabsContent>
+                        <div className="flex items-center justify-between rounded-md border border-border/70 px-2 py-1.5">
+                          <span className="text-xs text-muted-foreground">Staff</span>
+                          <Switch
+                            checked={user.permissions.staff}
+                            onCheckedChange={() => toggleUserPermission(user.id, "staff")}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="rounded-md border border-border/70 bg-panel/70 px-3 py-2 text-xs text-muted-foreground">
+                    No other users in this session.
+                  </p>
                 )}
-              </Tabs>
-            </article>
+              </article>
+            )}
 
             <article className="rounded-md border border-border/70 bg-panel-soft/70 p-4 shadow-soft">
               <h3 className="mb-2 text-sm font-semibold">Recent History</h3>
