@@ -540,14 +540,19 @@ export const voxariaApi = {
     if (!normalizedTitle) throw new Error("Missing search query for lyrics");
 
     try {
+      const activeGuildId = guildId?.trim() || apiAuthContext.guildId || DEFAULT_GUILD_ID;
+      const activeUserId = userId?.trim() || apiAuthContext.userId || OWNER_USER_ID;
+      const authHeader = apiAuthContext.sessionToken ? { Authorization: `Bearer ${apiAuthContext.sessionToken}` } : {};
+
       const response = await fetch(`${BASE_URL}${ENDPOINTS.lyrics}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "ngrok-skip-browser-warning": "true",
-          "x-user-id": userId,
-          "x-guild-id": guildId,
+          "x-user-id": activeUserId,
+          "x-guild-id": activeGuildId,
           "x-api-key": OWNER_API_KEY,
+          ...authHeader,
         },
         body: JSON.stringify({ title: normalizedTitle, artist: normalizedArtist }),
       });
@@ -568,16 +573,21 @@ export const voxariaApi = {
     if (!guildId?.trim() || !trackUrl?.trim()) throw new Error("Missing guildId or trackUrl");
 
     try {
+      const activeGuildId = guildId?.trim() || apiAuthContext.guildId || DEFAULT_GUILD_ID;
+      const activeUserId = userId?.trim() || apiAuthContext.userId || OWNER_USER_ID;
+      const authHeader = apiAuthContext.sessionToken ? { Authorization: `Bearer ${apiAuthContext.sessionToken}` } : {};
+
       const response = await fetch(`${BASE_URL}/music/karaoke`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "ngrok-skip-browser-warning": "true",
-          "x-user-id": userId,
-          "x-guild-id": guildId,
+          "x-user-id": activeUserId,
+          "x-guild-id": activeGuildId,
           "x-api-key": OWNER_API_KEY,
+          ...authHeader,
         },
-        body: JSON.stringify({ guildId, trackUrl: trackUrl.trim() }),
+        body: JSON.stringify({ guildId: activeGuildId, trackUrl: trackUrl.trim() }),
       });
 
       if (!response.ok) {
