@@ -43,6 +43,9 @@ export type ApiPlayer = {
   trackUrl?: string | null;
   durationSec: number;
   positionSec: number;
+  currentPositionMs: number;
+  currentPositionSec: number;
+  serverTimestampMs: number | null;
   startTime?: number | null;
   lastPausedAt?: number | null;
   isPaused?: boolean;
@@ -80,7 +83,9 @@ export type ApiLyrics = {
   title: string;
   artist: string;
   source: string;
-  lines: Array<string | { text: string; timeMs?: number; timestamp?: number }>;
+  plain: string;
+  synced: string;
+  hasSynced: boolean;
 };
 
 export type ApiPitchFrame = {
@@ -111,6 +116,9 @@ export type ApiSearchResult = {
   artist: string;
   duration?: number;
   thumbnail?: string;
+  cover?: string;
+  url?: string;
+  platform?: string;
 };
 
 export type ApiAuditTrack = {
