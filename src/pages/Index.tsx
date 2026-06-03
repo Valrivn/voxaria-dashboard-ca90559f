@@ -64,7 +64,7 @@ import {
 } from "@/lib/voxaria-api";
 
 type NavItem = { label: string; icon: typeof Disc3 };
-type LyricLine = { text: string; timeMs: number | null };
+type LyricLine = { text: string; timeSeconds: number };
 type SessionUser = {
   id: string;
   discordId?: string;
@@ -124,23 +124,20 @@ const resolveUiErrorMessage = (error: unknown, fallback: string) => {
 
 const getPresetId = (preset: ApiPreset) => preset.id ?? preset.name;
 
-const parseLyricLine = (line: ApiLyrics["lines"][number]): LyricLine => {
-  if (typeof line === "string") {
-    const match = line.match(/^\s*\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]\s*(.*)$/);
-    if (!match) return { text: line.trim(), timeMs: null };
+const parseLrcSyncedLyrics = (syncedString: string): LyricLine[] =>
+  syncedString
+    .split("\n")
+    .map((line) => {
+      const match = line.match(/^\[(\d{1,2}):(\d{2})\.(\d{2,3})\]\s*(.*)$/);
+      if (!match) return null;
 
-    const min = Number(match[1]);
-    const sec = Number(match[2]);
-    const msRaw = match[3] ?? "0";
-    const ms = Number(msRaw.padEnd(3, "0"));
-    const text = (match[4] ?? "").trim();
-    return { text, timeMs: min * 60000 + sec * 1000 + ms };
-  }
+      const [, mm, ss, cs, text] = match;
+      const timeSeconds =
+        Number.parseInt(mm, 10) * 60 + Number.parseInt(ss, 10) + Number.parseInt(cs, 10) / (cs.length === 2 ? 100 : 1000);
 
-  const text = line.text?.trim() ?? "";
-  const timeMs = line.timeMs ?? line.timestamp ?? null;
-  return { text, timeMs };
-};
+      return { timeSeconds, text: text.trim() };
+    })
+    .filter((line): line is LyricLine => Boolean(line && line.text.length > 0));
 
 const queueRow = (
   track: ApiTrack,
@@ -568,7 +565,10 @@ const Index = () => {
   );
 
   const currentTrackKey = `${currentTrack.title}::${currentTrack.artist}`;
-  const normalizedLyrics = useMemo(() => (lyricsData?.lines ?? []).map(parseLyricLine).filter((line) => line.text.length > 0), [lyricsData?.lines]);
+  const normalizedLyrics = useMemo(
+    () => (lyricsData?.hasSynced ? parseLrcSyncedLyrics(lyricsData.synced) : []),
+    [lyricsData?.hasSynced, lyricsData?.synced],
+  );
   const presetsData = presets.data ?? [];
   const activePreset = useMemo(
     () => presetsData.find((preset) => getPresetId(preset) === activePresetId) ?? null,
