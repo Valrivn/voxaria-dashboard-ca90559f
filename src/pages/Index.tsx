@@ -64,7 +64,7 @@ import {
 } from "@/lib/voxaria-api";
 
 type NavItem = { label: string; icon: typeof Disc3 };
-type LyricLine = { text: string; timeMs: number | null };
+type LyricLine = { text: string; timeSeconds: number };
 type SessionUser = {
   id: string;
   discordId?: string;
@@ -124,23 +124,20 @@ const resolveUiErrorMessage = (error: unknown, fallback: string) => {
 
 const getPresetId = (preset: ApiPreset) => preset.id ?? preset.name;
 
-const parseLyricLine = (line: ApiLyrics["lines"][number]): LyricLine => {
-  if (typeof line === "string") {
-    const match = line.match(/^\s*\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]\s*(.*)$/);
-    if (!match) return { text: line.trim(), timeMs: null };
+const parseLrcSyncedLyrics = (syncedString: string): LyricLine[] =>
+  syncedString
+    .split("\n")
+    .map((line) => {
+      const match = line.match(/^\[(\d{1,2}):(\d{2})\.(\d{2,3})\]\s*(.*)$/);
+      if (!match) return null;
 
-    const min = Number(match[1]);
-    const sec = Number(match[2]);
-    const msRaw = match[3] ?? "0";
-    const ms = Number(msRaw.padEnd(3, "0"));
-    const text = (match[4] ?? "").trim();
-    return { text, timeMs: min * 60000 + sec * 1000 + ms };
-  }
+      const [, mm, ss, cs, text] = match;
+      const timeSeconds =
+        Number.parseInt(mm, 10) * 60 + Number.parseInt(ss, 10) + Number.parseInt(cs, 10) / (cs.length === 2 ? 100 : 1000);
 
-  const text = line.text?.trim() ?? "";
-  const timeMs = line.timeMs ?? line.timestamp ?? null;
-  return { text, timeMs };
-};
+      return { timeSeconds, text: text.trim() };
+    })
+    .filter((line): line is LyricLine => Boolean(line && line.text.length > 0));
 
 const queueRow = (
   track: ApiTrack,
@@ -231,7 +228,6 @@ const Index = () => {
     const parsed = stored ? Number(stored) : NaN;
     return Number.isFinite(parsed) ? parsed : LYRIC_OFFSET_DEFAULT_MS;
   });
-  const [rttCompensationMs, setRttCompensationMs] = useState(0);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [lyricsOpen, setLyricsOpen] = useState(true);
   const [karaokeEnabled, setKaraokeEnabled] = useState(false);
@@ -308,14 +304,21 @@ const Index = () => {
       try {
         const data = await voxariaApi.getPlayer();
         const elapsed = Math.max(0, Date.now() - startedAt);
-        setRttCompensationMs(elapsed / 2);
-        return data;
+        const serverTimestampMs = data.serverTimestampMs ?? Date.now();
+        const latencyCompensationSec = data.playing && !data.isPaused ? elapsed / 2000 : 0;
+        const driftSec = Math.max(0, (Date.now() - serverTimestampMs) / 1000);
+
+        return {
+          ...data,
+          currentPositionSec: data.currentPositionSec + latencyCompensationSec + driftSec,
+          currentPositionMs: (data.currentPositionSec + latencyCompensationSec + driftSec) * 1000,
+        };
       } catch (error) {
         console.error("Player polling failed:", error);
         throw error;
       }
     },
-    refetchInterval: 1000,
+    refetchInterval: 2000,
   });
   const presets = useQuery({ queryKey: ["presets"], queryFn: voxariaApi.getPresets, refetchInterval: 30000 });
   const activeGuildId = useMemo(() => {
@@ -372,7 +375,7 @@ const Index = () => {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedPlaylistQuery(playlistBuilderQuery.trim());
-    }, 500);
+    }, 400);
 
     return () => window.clearTimeout(timer);
   }, [playlistBuilderQuery]);
@@ -568,7 +571,10 @@ const Index = () => {
   );
 
   const currentTrackKey = `${currentTrack.title}::${currentTrack.artist}`;
-  const normalizedLyrics = useMemo(() => (lyricsData?.lines ?? []).map(parseLyricLine).filter((line) => line.text.length > 0), [lyricsData?.lines]);
+  const normalizedLyrics = useMemo(
+    () => (lyricsData?.hasSynced ? parseLrcSyncedLyrics(lyricsData.synced) : []),
+    [lyricsData?.hasSynced, lyricsData?.synced],
+  );
   const presetsData = presets.data ?? [];
   const activePreset = useMemo(
     () => presetsData.find((preset) => getPresetId(preset) === activePresetId) ?? null,
@@ -602,9 +608,9 @@ const Index = () => {
     setIsFetchingLyrics(true);
     try {
       const response = await voxariaApi.fetchLyrics(currentTrack.title, currentTrack.artist, activeGuildId);
-      const lyricsText = response?.lyrics?.trim();
+      const hasAnyLyrics = Boolean(response.synced?.trim() || response.plain?.trim());
 
-      if (!lyricsText) {
+      if (!hasAnyLyrics) {
         setLyricsData(null);
         setLyricsUnavailable(true);
         setActiveLine(0);
@@ -613,13 +619,30 @@ const Index = () => {
       }
 
       setLyricsData({
-        title: currentTrack.title,
-        artist: currentTrack.artist || "Unknown artist",
-        source: "On-demand",
-        lines: lyricsText.split(/\r?\n/).filter((line) => line.trim().length > 0),
+        title: response.title || currentTrack.title,
+        artist: response.artist || currentTrack.artist || "Unknown artist",
+        source: response.source || "unknown",
+        plain: response.plain || "",
+        synced: response.synced || "",
+        hasSynced: response.hasSynced,
       });
       setLyricsUnavailable(false);
-      setActiveLine(0);
+      if (response.hasSynced && response.synced.trim()) {
+        const parsed = parseLrcSyncedLyrics(response.synced);
+        const adjustedPositionSec = (player.data?.currentPositionSec ?? 0) + (player.data?.playing && !player.data?.isPaused ? 0.1 : 0);
+        const startingLine = Math.max(
+          0,
+          parsed.reduce((last, line, index) => (line.timeSeconds <= adjustedPositionSec ? index : last), 0),
+        );
+        setActiveLine(startingLine);
+        requestAnimationFrame(() => {
+          lyricsContainerRef.current
+            ?.querySelector<HTMLElement>(`[data-lyric-index='${startingLine}']`)
+            ?.scrollIntoView({ block: "nearest", behavior: "auto" });
+        });
+      } else {
+        setActiveLine(0);
+      }
       toast({ title: "Lyrics synced", description: "Lyrics refreshed successfully." });
     } catch (error) {
       console.error("Refresh lyrics failed:", error);
@@ -684,7 +707,7 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
-    const adjustedMs = Math.max(0, interpolatedPositionMs - rttCompensationMs - syncOffsetMs);
+    const adjustedMs = Math.max(0, (player.data?.currentPositionSec ?? 0) * 1000 - syncOffsetMs);
     smoothTimeRef.current = adjustedMs;
 
     if (currentPositionRef.current) {
@@ -697,22 +720,41 @@ const Index = () => {
 
     if (!normalizedLyrics.length) return;
 
-    const fallbackIndex = Math.min(normalizedLyrics.length - 1, Math.floor(adjustedMs / LYRIC_HOLD_WINDOW_MS));
     const nextIndex = normalizedLyrics.findIndex((line, idx) => {
-      const start = line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS;
-      const nextStart = normalizedLyrics[idx + 1]?.timeMs ?? Number.POSITIVE_INFINITY;
-      const end = Math.min(start + LYRIC_HOLD_WINDOW_MS, nextStart);
+      const start = line.timeSeconds * 1000;
+      const nextStart = (normalizedLyrics[idx + 1]?.timeSeconds ?? Number.POSITIVE_INFINITY) * 1000;
+      const end = nextStart;
       return adjustedMs >= start && adjustedMs < end;
     });
 
-    const resolved = nextIndex >= 0 ? nextIndex : fallbackIndex;
+    const resolved = nextIndex >= 0 ? nextIndex : Math.max(0, normalizedLyrics.length - 1);
     if (resolved !== activeLineRef.current) {
       activeLineRef.current = resolved;
       setActiveLine(resolved);
       const target = lyricsContainerRef.current?.querySelector<HTMLElement>(`[data-lyric-index='${resolved}']`);
       target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
-  }, [interpolatedPositionMs, normalizedLyrics, player.data?.durationSec, rttCompensationMs, syncOffsetMs]);
+  }, [normalizedLyrics, player.data?.currentPositionSec, player.data?.durationSec, syncOffsetMs]);
+
+  useEffect(() => {
+    if (!lyricsData?.hasSynced || !normalizedLyrics.length) return;
+
+    const adjustedPositionSec = player.data?.currentPositionSec ?? 0;
+    const startingLine = Math.max(
+      0,
+      normalizedLyrics.reduce((last, line, index) => (line.timeSeconds <= adjustedPositionSec ? index : last), 0),
+    );
+
+    if (startingLine !== activeLineRef.current) {
+      activeLineRef.current = startingLine;
+      setActiveLine(startingLine);
+      requestAnimationFrame(() => {
+        lyricsContainerRef.current
+          ?.querySelector<HTMLElement>(`[data-lyric-index='${startingLine}']`)
+          ?.scrollIntoView({ block: "nearest", behavior: "auto" });
+      });
+    }
+  }, [lyricsData?.hasSynced, normalizedLyrics, player.data?.currentPositionSec]);
 
   useEffect(() => {
     if (typeof player.data?.volume === "number") {
@@ -763,6 +805,8 @@ const Index = () => {
 
     const presetId = getPresetId(activePreset);
     addTrackToPresetMutation.mutate({ presetId, track });
+    setPlaylistBuilderQuery("");
+    setDebouncedPlaylistQuery("");
   };
 
   const removeTrackFromActivePreset = (trackIndex: number) => {
@@ -831,9 +875,9 @@ const Index = () => {
     });
   };
 
-  const handleLyricSync = (idx: number, lineTimeMs: number | null) => {
-    const clickedLineTime = lineTimeMs ?? idx * LYRIC_HOLD_WINDOW_MS;
-    const currentSmoothTime = smoothTimeRef.current;
+  const handleLyricSync = (idx: number, lineTimeSeconds: number) => {
+    const clickedLineTime = lineTimeSeconds * 1000;
+    const currentSmoothTime = Math.max(0, (player.data?.currentPositionSec ?? 0) * 1000);
     const newOffset = clickedLineTime - currentSmoothTime;
 
     setSyncOffsetMs(newOffset);
@@ -1136,13 +1180,13 @@ const Index = () => {
 
             <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
               <div className="space-y-2">
-                {normalizedLyrics.length ? (
+                {lyricsData?.hasSynced && normalizedLyrics.length ? (
                   normalizedLyrics.map((line, idx) => (
                     <button
                       key={`${line.text}-${idx}`}
                       data-lyric-index={idx}
-                      data-lyric-time={line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS}
-                      onClick={() => handleLyricSync(idx, line.timeMs)}
+                      data-lyric-time={line.timeSeconds}
+                      onClick={() => handleLyricSync(idx, line.timeSeconds)}
                       className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
                         idx === activeLine
                           ? "border-l-[4px] bg-accent/35 text-primary neon-glow neon-text"
@@ -1160,6 +1204,10 @@ const Index = () => {
                       {line.text}
                     </button>
                   ))
+                ) : lyricsData?.plain?.trim() ? (
+                  <p className="whitespace-pre-line rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-foreground/85">
+                    {lyricsData.plain}
+                  </p>
                 ) : (
                   <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
                     {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
@@ -1309,13 +1357,13 @@ const Index = () => {
                     <CollapsibleContent className="h-[380px] border-t border-border/70 px-2 py-2">
                       <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
                         <div className="space-y-2">
-                          {normalizedLyrics.length ? (
+                          {lyricsData?.hasSynced && normalizedLyrics.length ? (
                             normalizedLyrics.map((line, idx) => (
                               <button
                                 key={`${line.text}-${idx}`}
                                 data-lyric-index={idx}
-                                data-lyric-time={line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS}
-                                onClick={() => handleLyricSync(idx, line.timeMs)}
+                                data-lyric-time={line.timeSeconds}
+                                onClick={() => handleLyricSync(idx, line.timeSeconds)}
                                 className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
                                   idx === activeLine
                                     ? "border-l-[4px] bg-accent/35 text-primary neon-glow neon-text"
@@ -1333,6 +1381,10 @@ const Index = () => {
                                 {line.text}
                               </button>
                             ))
+                          ) : lyricsData?.plain?.trim() ? (
+                            <p className="whitespace-pre-line rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-foreground/85">
+                              {lyricsData.plain}
+                            </p>
                           ) : (
                             <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
                               {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
@@ -1600,10 +1652,11 @@ const Index = () => {
 
                           {playlistBuilderQuery.trim().length > 1 && (
                             <div className="absolute left-0 right-0 z-20 mt-1 max-h-56 space-y-2 overflow-y-auto rounded-md border border-border/70 bg-panel p-2 shadow-lg">
-                              {playlistSearch.isLoading ? (
-                                <p className="rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2 text-xs text-muted-foreground">
+                              {playlistSearch.isFetching ? (
+                                <div className="flex items-center gap-2 rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2 text-xs text-muted-foreground">
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                   Searching...
-                                </p>
+                                </div>
                               ) : playlistSearch.isError ? (
                                 <p className="rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2 text-xs text-muted-foreground">
                                   Service Unavailable
@@ -1612,9 +1665,9 @@ const Index = () => {
                                 (playlistSearch.data ?? []).map((track) => (
                                   <div key={track.id} className="flex items-center gap-2 rounded-md border border-border/70 bg-panel-soft/70 p-2">
                                     {track.thumbnail ? (
-                                      <img src={track.thumbnail} alt={`${track.title} thumbnail`} loading="lazy" className="h-10 w-10 rounded object-cover" />
+                                      <img src={track.thumbnail} alt={`${track.title} thumbnail`} loading="lazy" className="h-12 w-12 rounded-md object-cover" />
                                     ) : (
-                                      <div className="flex h-10 w-10 items-center justify-center rounded border border-border/70 bg-panel">
+                                      <div className="flex h-12 w-12 items-center justify-center rounded-md border border-border/70 bg-panel">
                                         <Disc3 className="h-4 w-4 text-muted-foreground" />
                                       </div>
                                     )}
@@ -1634,8 +1687,8 @@ const Index = () => {
                                   </div>
                                 ))
                               ) : (
-                                <p className="rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2 text-xs text-muted-foreground">
-                                  No matches found.
+                                  <p className="rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2 text-xs text-muted-foreground">
+                                    No results found.
                                 </p>
                               )}
                             </div>

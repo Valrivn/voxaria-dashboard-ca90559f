@@ -43,6 +43,9 @@ export type ApiPlayer = {
   trackUrl?: string | null;
   durationSec: number;
   positionSec: number;
+  currentPositionMs: number;
+  currentPositionSec: number;
+  serverTimestampMs: number | null;
   startTime?: number | null;
   lastPausedAt?: number | null;
   isPaused?: boolean;
@@ -80,7 +83,9 @@ export type ApiLyrics = {
   title: string;
   artist: string;
   source: string;
-  lines: Array<string | { text: string; timeMs?: number; timestamp?: number }>;
+  plain: string;
+  synced: string;
+  hasSynced: boolean;
 };
 
 export type ApiPitchFrame = {
@@ -111,6 +116,9 @@ export type ApiSearchResult = {
   artist: string;
   duration?: number;
   thumbnail?: string;
+  cover?: string;
+  url?: string;
+  platform?: string;
 };
 
 export type ApiAuditTrack = {
@@ -294,12 +302,19 @@ const normalizePlayerPayload = (payload: RawPlayerPayload): ApiPlayer => {
   const dataInfo = data.info && typeof data.info === "object" ? (data.info as Record<string, unknown>) : {};
   const rootInfo = root.info && typeof root.info === "object" ? (root.info as Record<string, unknown>) : {};
 
-  const positionMs = toNumber(pick("position", data, root));
-  const currentTimeSec = toNumber(pick("currentTime", data, root));
+  const currentPositionMsValue =
+    toNumber(pick("currentPositionMs", data, root)) ??
+    toNumber(pick("position", data, root)) ??
+    0;
+  const currentPositionSecValue =
+    toNumber(pick("currentPositionSec", data, root)) ??
+    toNumber(pick("currentTime", data, root)) ??
+    currentPositionMsValue / 1000;
+  const serverTimestampMs = toNumber(pick("serverTimestampMs", data, root));
   const durationMs = toNumber(pick("duration", data, root));
   const totalTimeSec = toNumber(pick("totalTime", data, root));
 
-  const positionSec = positionMs !== null ? positionMs / 1000 : (currentTimeSec ?? 0);
+  const positionSec = Math.max(0, currentPositionSecValue);
   const durationSec = durationMs !== null ? durationMs / 1000 : (totalTimeSec ?? 0);
   const isPaused = toBoolean(pick("paused", data, root)) ?? toBoolean(pick("isPaused", data, root)) ?? false;
   const playing = toBoolean(pick("playing", data, root)) ?? false;
@@ -327,6 +342,9 @@ const normalizePlayerPayload = (payload: RawPlayerPayload): ApiPlayer => {
       toStringValue(pick("uri", data, root)),
     durationSec: Math.max(0, durationSec),
     positionSec: Math.max(0, positionSec),
+    currentPositionMs: Math.max(0, currentPositionMsValue),
+    currentPositionSec: Math.max(0, currentPositionSecValue),
+    serverTimestampMs,
     startTime: (pick<number | null>("startTime", data, root) ?? null) as number | null,
     lastPausedAt: (pick<number | null>("lastPausedAt", data, root) ?? null) as number | null,
     isPaused,
@@ -371,9 +389,26 @@ const normalizeSearchCatalogPayload = (payload: unknown): ApiSearchResult[] => {
           toOptionalString(result.thumbnail) ??
           toOptionalString(result.artworkUrl) ??
           toOptionalString(result.art),
+        cover: toOptionalString(result.cover),
+        url: toOptionalString(result.url),
+        platform: toOptionalString(result.platform),
       };
     })
     .filter((track) => track.id && track.title);
+};
+
+const normalizeLyricsPayload = (payload: unknown): ApiLyrics => {
+  const root = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const lyrics = root.lyrics && typeof root.lyrics === "object" ? (root.lyrics as Record<string, unknown>) : root;
+
+  return {
+    title: toStringValue(lyrics.title) ?? "",
+    artist: toStringValue(lyrics.artist) ?? "",
+    source: toStringValue(lyrics.source) ?? "unknown",
+    plain: toStringValue(lyrics.plain) ?? "",
+    synced: toStringValue(lyrics.synced) ?? "",
+    hasSynced: toBoolean(lyrics.hasSynced) ?? Boolean(toStringValue(lyrics.synced)),
+  };
 };
 
 const normalizePresetsPayload = (payload: unknown): ApiPreset[] => {
@@ -529,10 +564,10 @@ export const voxariaApi = {
       body: JSON.stringify({ volume }),
     }),
   getLyrics: (title: string, artist: string) =>
-    request<ApiLyrics>(ENDPOINTS.lyrics, {
+    request<unknown>(ENDPOINTS.lyrics, {
       method: "POST",
       body: JSON.stringify({ title: cleanLyricsTitle(title), artist }),
-    }),
+    }).then(normalizeLyricsPayload),
   fetchLyrics: async (title: string, artist: string, guildId = DEFAULT_GUILD_ID, userId = OWNER_USER_ID) => {
     const normalizedTitle = cleanLyricsTitle(title);
     const normalizedArtist = artist?.trim();
@@ -562,7 +597,8 @@ export const voxariaApi = {
         throw new Error("Failed to fetch lyrics");
       }
 
-      return response.json() as Promise<{ lyrics?: string }>;
+      const payload = (await response.json()) as unknown;
+      return normalizeLyricsPayload(payload);
     } catch (error) {
       console.error("fetchLyrics request failed:", error);
       throw error;
@@ -632,9 +668,9 @@ export const voxariaApi = {
       body: JSON.stringify({ query }),
     }).then(normalizeSearchCatalogPayload),
   addTrackToPreset: (presetId: string, track: ApiSearchResult) =>
-    request<{ ok: boolean; preset?: ApiPreset }>(`/presets/${encodeURIComponent(presetId)}/add`, {
+    request<{ ok: boolean; preset?: ApiPreset }>(`/music/playlist/add-track`, {
       method: "POST",
-      body: JSON.stringify({ track }),
+      body: JSON.stringify({ playlistId: presetId, track }),
     }),
   importPlaylistToPreset: (presetId: string, url: string) =>
     request<{ ok: boolean; added?: number; preset?: ApiPreset }>(`/presets/${encodeURIComponent(presetId)}/import`, {
@@ -710,11 +746,8 @@ export const mockData = {
     title: "Night Circuit",
     artist: "Mira Kade",
     source: "Temporary adapter",
-    lines: [
-      "Streetlights whisper in the static glow",
-      "Pulse of midnight running through the low",
-      "Neon hearts and engines in the rain",
-      "We keep moving through electric veins",
-    ],
+    plain: "Streetlights whisper in the static glow\nPulse of midnight running through the low\nNeon hearts and engines in the rain\nWe keep moving through electric veins",
+    synced: "[00:03.00] Streetlights whisper in the static glow\n[00:08.00] Pulse of midnight running through the low\n[00:13.00] Neon hearts and engines in the rain\n[00:18.00] We keep moving through electric veins",
+    hasSynced: true,
   } as ApiLyrics,
 };
