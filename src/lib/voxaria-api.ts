@@ -564,10 +564,10 @@ export const voxariaApi = {
       body: JSON.stringify({ volume }),
     }),
   getLyrics: (title: string, artist: string) =>
-    request<ApiLyrics>(ENDPOINTS.lyrics, {
+    request<unknown>(ENDPOINTS.lyrics, {
       method: "POST",
       body: JSON.stringify({ title: cleanLyricsTitle(title), artist }),
-    }),
+    }).then(normalizeLyricsPayload),
   fetchLyrics: async (title: string, artist: string, guildId = DEFAULT_GUILD_ID, userId = OWNER_USER_ID) => {
     const normalizedTitle = cleanLyricsTitle(title);
     const normalizedArtist = artist?.trim();
@@ -597,7 +597,8 @@ export const voxariaApi = {
         throw new Error("Failed to fetch lyrics");
       }
 
-      return response.json() as Promise<{ lyrics?: string }>;
+      const payload = (await response.json()) as unknown;
+      return normalizeLyricsPayload(payload);
     } catch (error) {
       console.error("fetchLyrics request failed:", error);
       throw error;
@@ -667,9 +668,9 @@ export const voxariaApi = {
       body: JSON.stringify({ query }),
     }).then(normalizeSearchCatalogPayload),
   addTrackToPreset: (presetId: string, track: ApiSearchResult) =>
-    request<{ ok: boolean; preset?: ApiPreset }>(`/presets/${encodeURIComponent(presetId)}/add`, {
+    request<{ ok: boolean; preset?: ApiPreset }>(`/music/playlist/add-track`, {
       method: "POST",
-      body: JSON.stringify({ track }),
+      body: JSON.stringify({ playlistId: presetId, track }),
     }),
   importPlaylistToPreset: (presetId: string, url: string) =>
     request<{ ok: boolean; added?: number; preset?: ApiPreset }>(`/presets/${encodeURIComponent(presetId)}/import`, {
@@ -745,11 +746,8 @@ export const mockData = {
     title: "Night Circuit",
     artist: "Mira Kade",
     source: "Temporary adapter",
-    lines: [
-      "Streetlights whisper in the static glow",
-      "Pulse of midnight running through the low",
-      "Neon hearts and engines in the rain",
-      "We keep moving through electric veins",
-    ],
+    plain: "Streetlights whisper in the static glow\nPulse of midnight running through the low\nNeon hearts and engines in the rain\nWe keep moving through electric veins",
+    synced: "[00:03.00] Streetlights whisper in the static glow\n[00:08.00] Pulse of midnight running through the low\n[00:13.00] Neon hearts and engines in the rain\n[00:18.00] We keep moving through electric veins",
+    hasSynced: true,
   } as ApiLyrics,
 };
