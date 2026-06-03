@@ -1180,7 +1180,7 @@ const Index = () => {
 
             <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
               <div className="space-y-2">
-                {normalizedLyrics.length ? (
+                {lyricsData?.hasSynced && normalizedLyrics.length ? (
                   normalizedLyrics.map((line, idx) => (
                     <button
                       key={`${line.text}-${idx}`}
@@ -1204,6 +1204,10 @@ const Index = () => {
                       {line.text}
                     </button>
                   ))
+                ) : lyricsData?.plain?.trim() ? (
+                  <p className="whitespace-pre-line rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-foreground/85">
+                    {lyricsData.plain}
+                  </p>
                 ) : (
                   <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
                     {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
@@ -1353,7 +1357,7 @@ const Index = () => {
                     <CollapsibleContent className="h-[380px] border-t border-border/70 px-2 py-2">
                       <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
                         <div className="space-y-2">
-                          {normalizedLyrics.length ? (
+                          {lyricsData?.hasSynced && normalizedLyrics.length ? (
                             normalizedLyrics.map((line, idx) => (
                               <button
                                 key={`${line.text}-${idx}`}
@@ -1377,6 +1381,10 @@ const Index = () => {
                                 {line.text}
                               </button>
                             ))
+                          ) : lyricsData?.plain?.trim() ? (
+                            <p className="whitespace-pre-line rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-foreground/85">
+                              {lyricsData.plain}
+                            </p>
                           ) : (
                             <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
                               {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
