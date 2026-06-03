@@ -686,7 +686,7 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
-    const adjustedMs = Math.max(0, interpolatedPositionMs - rttCompensationMs - syncOffsetMs);
+    const adjustedMs = Math.max(0, (player.data?.currentPositionSec ?? 0) * 1000 - syncOffsetMs);
     smoothTimeRef.current = adjustedMs;
 
     if (currentPositionRef.current) {
@@ -699,22 +699,21 @@ const Index = () => {
 
     if (!normalizedLyrics.length) return;
 
-    const fallbackIndex = Math.min(normalizedLyrics.length - 1, Math.floor(adjustedMs / LYRIC_HOLD_WINDOW_MS));
     const nextIndex = normalizedLyrics.findIndex((line, idx) => {
-      const start = line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS;
-      const nextStart = normalizedLyrics[idx + 1]?.timeMs ?? Number.POSITIVE_INFINITY;
-      const end = Math.min(start + LYRIC_HOLD_WINDOW_MS, nextStart);
+      const start = line.timeSeconds * 1000;
+      const nextStart = (normalizedLyrics[idx + 1]?.timeSeconds ?? Number.POSITIVE_INFINITY) * 1000;
+      const end = nextStart;
       return adjustedMs >= start && adjustedMs < end;
     });
 
-    const resolved = nextIndex >= 0 ? nextIndex : fallbackIndex;
+    const resolved = nextIndex >= 0 ? nextIndex : Math.max(0, normalizedLyrics.length - 1);
     if (resolved !== activeLineRef.current) {
       activeLineRef.current = resolved;
       setActiveLine(resolved);
       const target = lyricsContainerRef.current?.querySelector<HTMLElement>(`[data-lyric-index='${resolved}']`);
       target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
-  }, [interpolatedPositionMs, normalizedLyrics, player.data?.durationSec, rttCompensationMs, syncOffsetMs]);
+  }, [normalizedLyrics, player.data?.currentPositionSec, player.data?.durationSec, syncOffsetMs]);
 
   useEffect(() => {
     if (typeof player.data?.volume === "number") {
@@ -765,6 +764,8 @@ const Index = () => {
 
     const presetId = getPresetId(activePreset);
     addTrackToPresetMutation.mutate({ presetId, track });
+    setPlaylistBuilderQuery("");
+    setDebouncedPlaylistQuery("");
   };
 
   const removeTrackFromActivePreset = (trackIndex: number) => {
