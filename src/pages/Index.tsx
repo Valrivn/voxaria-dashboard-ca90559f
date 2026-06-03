@@ -737,6 +737,26 @@ const Index = () => {
   }, [normalizedLyrics, player.data?.currentPositionSec, player.data?.durationSec, syncOffsetMs]);
 
   useEffect(() => {
+    if (!lyricsData?.hasSynced || !normalizedLyrics.length) return;
+
+    const adjustedPositionSec = player.data?.currentPositionSec ?? 0;
+    const startingLine = Math.max(
+      0,
+      normalizedLyrics.reduce((last, line, index) => (line.timeSeconds <= adjustedPositionSec ? index : last), 0),
+    );
+
+    if (startingLine !== activeLineRef.current) {
+      activeLineRef.current = startingLine;
+      setActiveLine(startingLine);
+      requestAnimationFrame(() => {
+        lyricsContainerRef.current
+          ?.querySelector<HTMLElement>(`[data-lyric-index='${startingLine}']`)
+          ?.scrollIntoView({ block: "nearest", behavior: "auto" });
+      });
+    }
+  }, [lyricsData?.hasSynced, normalizedLyrics, player.data?.currentPositionSec]);
+
+  useEffect(() => {
     if (typeof player.data?.volume === "number") {
       setUiVolume(Math.min(200, Math.max(0, player.data.volume)));
     }
