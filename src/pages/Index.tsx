@@ -1165,8 +1165,8 @@ const Index = () => {
                     <button
                       key={`${line.text}-${idx}`}
                       data-lyric-index={idx}
-                      data-lyric-time={line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS}
-                      onClick={() => handleLyricSync(idx, line.timeMs)}
+                      data-lyric-time={line.timeSeconds}
+                      onClick={() => handleLyricSync(idx, line.timeSeconds)}
                       className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
                         idx === activeLine
                           ? "border-l-[4px] bg-accent/35 text-primary neon-glow neon-text"
@@ -1338,8 +1338,8 @@ const Index = () => {
                               <button
                                 key={`${line.text}-${idx}`}
                                 data-lyric-index={idx}
-                                data-lyric-time={line.timeMs ?? idx * LYRIC_HOLD_WINDOW_MS}
-                                onClick={() => handleLyricSync(idx, line.timeMs)}
+                                data-lyric-time={line.timeSeconds}
+                                onClick={() => handleLyricSync(idx, line.timeSeconds)}
                                 className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
                                   idx === activeLine
                                     ? "border-l-[4px] bg-accent/35 text-primary neon-glow neon-text"
