@@ -1652,10 +1652,11 @@ const Index = () => {
 
                           {playlistBuilderQuery.trim().length > 1 && (
                             <div className="absolute left-0 right-0 z-20 mt-1 max-h-56 space-y-2 overflow-y-auto rounded-md border border-border/70 bg-panel p-2 shadow-lg">
-                              {playlistSearch.isLoading ? (
-                                <p className="rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2 text-xs text-muted-foreground">
+                              {playlistSearch.isFetching ? (
+                                <div className="flex items-center gap-2 rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2 text-xs text-muted-foreground">
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                   Searching...
-                                </p>
+                                </div>
                               ) : playlistSearch.isError ? (
                                 <p className="rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2 text-xs text-muted-foreground">
                                   Service Unavailable
@@ -1664,9 +1665,9 @@ const Index = () => {
                                 (playlistSearch.data ?? []).map((track) => (
                                   <div key={track.id} className="flex items-center gap-2 rounded-md border border-border/70 bg-panel-soft/70 p-2">
                                     {track.thumbnail ? (
-                                      <img src={track.thumbnail} alt={`${track.title} thumbnail`} loading="lazy" className="h-10 w-10 rounded object-cover" />
+                                      <img src={track.thumbnail} alt={`${track.title} thumbnail`} loading="lazy" className="h-12 w-12 rounded-md object-cover" />
                                     ) : (
-                                      <div className="flex h-10 w-10 items-center justify-center rounded border border-border/70 bg-panel">
+                                      <div className="flex h-12 w-12 items-center justify-center rounded-md border border-border/70 bg-panel">
                                         <Disc3 className="h-4 w-4 text-muted-foreground" />
                                       </div>
                                     )}
@@ -1686,8 +1687,8 @@ const Index = () => {
                                   </div>
                                 ))
                               ) : (
-                                <p className="rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2 text-xs text-muted-foreground">
-                                  No matches found.
+                                  <p className="rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2 text-xs text-muted-foreground">
+                                    No results found.
                                 </p>
                               )}
                             </div>
