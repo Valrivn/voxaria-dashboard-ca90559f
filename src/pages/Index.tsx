@@ -228,7 +228,6 @@ const Index = () => {
     const parsed = stored ? Number(stored) : NaN;
     return Number.isFinite(parsed) ? parsed : LYRIC_OFFSET_DEFAULT_MS;
   });
-  const [rttCompensationMs, setRttCompensationMs] = useState(0);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [lyricsOpen, setLyricsOpen] = useState(true);
   const [karaokeEnabled, setKaraokeEnabled] = useState(false);
@@ -305,8 +304,15 @@ const Index = () => {
       try {
         const data = await voxariaApi.getPlayer();
         const elapsed = Math.max(0, Date.now() - startedAt);
-        setRttCompensationMs(elapsed / 2);
-        return data;
+        const serverTimestampMs = data.serverTimestampMs ?? Date.now();
+        const latencyCompensationSec = data.playing && !data.isPaused ? elapsed / 2000 : 0;
+        const driftSec = Math.max(0, (Date.now() - serverTimestampMs) / 1000);
+
+        return {
+          ...data,
+          currentPositionSec: data.currentPositionSec + latencyCompensationSec + driftSec,
+          currentPositionMs: (data.currentPositionSec + latencyCompensationSec + driftSec) * 1000,
+        };
       } catch (error) {
         console.error("Player polling failed:", error);
         throw error;
@@ -621,7 +627,22 @@ const Index = () => {
         hasSynced: response.hasSynced,
       });
       setLyricsUnavailable(false);
-      setActiveLine(0);
+      if (response.hasSynced && response.synced.trim()) {
+        const parsed = parseLrcSyncedLyrics(response.synced);
+        const adjustedPositionSec = (player.data?.currentPositionSec ?? 0) + (player.data?.playing && !player.data?.isPaused ? 0.1 : 0);
+        const startingLine = Math.max(
+          0,
+          parsed.reduce((last, line, index) => (line.timeSeconds <= adjustedPositionSec ? index : last), 0),
+        );
+        setActiveLine(startingLine);
+        requestAnimationFrame(() => {
+          lyricsContainerRef.current
+            ?.querySelector<HTMLElement>(`[data-lyric-index='${startingLine}']`)
+            ?.scrollIntoView({ block: "nearest", behavior: "auto" });
+        });
+      } else {
+        setActiveLine(0);
+      }
       toast({ title: "Lyrics synced", description: "Lyrics refreshed successfully." });
     } catch (error) {
       console.error("Refresh lyrics failed:", error);
