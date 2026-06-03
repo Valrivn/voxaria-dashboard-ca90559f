@@ -312,7 +312,7 @@ const Index = () => {
         throw error;
       }
     },
-    refetchInterval: 1000,
+    refetchInterval: 2000,
   });
   const presets = useQuery({ queryKey: ["presets"], queryFn: voxariaApi.getPresets, refetchInterval: 30000 });
   const activeGuildId = useMemo(() => {
@@ -369,7 +369,7 @@ const Index = () => {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedPlaylistQuery(playlistBuilderQuery.trim());
-    }, 500);
+    }, 400);
 
     return () => window.clearTimeout(timer);
   }, [playlistBuilderQuery]);
@@ -602,9 +602,9 @@ const Index = () => {
     setIsFetchingLyrics(true);
     try {
       const response = await voxariaApi.fetchLyrics(currentTrack.title, currentTrack.artist, activeGuildId);
-      const lyricsText = response?.lyrics?.trim();
+      const hasAnyLyrics = Boolean(response.synced?.trim() || response.plain?.trim());
 
-      if (!lyricsText) {
+      if (!hasAnyLyrics) {
         setLyricsData(null);
         setLyricsUnavailable(true);
         setActiveLine(0);
@@ -613,10 +613,12 @@ const Index = () => {
       }
 
       setLyricsData({
-        title: currentTrack.title,
-        artist: currentTrack.artist || "Unknown artist",
-        source: "On-demand",
-        lines: lyricsText.split(/\r?\n/).filter((line) => line.trim().length > 0),
+        title: response.title || currentTrack.title,
+        artist: response.artist || currentTrack.artist || "Unknown artist",
+        source: response.source || "unknown",
+        plain: response.plain || "",
+        synced: response.synced || "",
+        hasSynced: response.hasSynced,
       });
       setLyricsUnavailable(false);
       setActiveLine(0);
@@ -831,9 +833,9 @@ const Index = () => {
     });
   };
 
-  const handleLyricSync = (idx: number, lineTimeMs: number | null) => {
-    const clickedLineTime = lineTimeMs ?? idx * LYRIC_HOLD_WINDOW_MS;
-    const currentSmoothTime = smoothTimeRef.current;
+  const handleLyricSync = (idx: number, lineTimeSeconds: number) => {
+    const clickedLineTime = lineTimeSeconds * 1000;
+    const currentSmoothTime = Math.max(0, (player.data?.currentPositionSec ?? 0) * 1000);
     const newOffset = clickedLineTime - currentSmoothTime;
 
     setSyncOffsetMs(newOffset);
