@@ -711,8 +711,6 @@ const Index = () => {
   }, [interpolatedPositionMs]);
 
   useEffect(() => {
-    setCurrentPlaybackTimeSec(Math.max(0, interpolatedPositionMs / 1000));
-
     const adjustedMs = Math.max(0, (player.data?.currentPositionSec ?? 0) * 1000 - syncOffsetMs);
     smoothTimeRef.current = adjustedMs;
 

@@ -762,5 +762,11 @@ export const mockData = {
     plain: "Streetlights whisper in the static glow\nPulse of midnight running through the low\nNeon hearts and engines in the rain\nWe keep moving through electric veins",
     synced: "[00:03.00] Streetlights whisper in the static glow\n[00:08.00] Pulse of midnight running through the low\n[00:13.00] Neon hearts and engines in the rain\n[00:18.00] We keep moving through electric veins",
     hasSynced: true,
+    lines: [
+      { timeSeconds: 3, text: "Streetlights whisper in the static glow" },
+      { timeSeconds: 8, text: "Pulse of midnight running through the low" },
+      { timeSeconds: 13, text: "Neon hearts and engines in the rain" },
+      { timeSeconds: 18, text: "We keep moving through electric veins" },
+    ],
   } as ApiLyrics,
 };
