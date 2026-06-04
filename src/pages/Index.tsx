@@ -77,6 +77,8 @@ type SessionUser = {
   };
 };
 
+const LYRIC_OFFSET_DEFAULT_MS = 0;
+const LYRIC_CALIBRATION_STORAGE_KEY = "voxaria.lyricCalibrationOffsetMs";
 const LYRIC_HOLD_WINDOW_MS = 3000;
 const KARAOKE_SCORE_TICK_MS = 120;
 const MIN_PITCH_CLARITY = 0.78;
@@ -229,6 +231,7 @@ const Index = () => {
   const [isGeneratingKaraoke, setIsGeneratingKaraoke] = useState(false);
   const [currentPitchMap, setCurrentPitchMap] = useState<ApiPitchMap | null>(null);
   const [interpolatedPositionMs, setInterpolatedPositionMs] = useState(0);
+  const [currentPlaybackTimeSec, setCurrentPlaybackTimeSec] = useState(0);
 
   const animationFrameRef = useRef<number | null>(null);
   const karaokeAnimationRef = useRef<number | null>(null);
@@ -556,8 +559,8 @@ const Index = () => {
 
   const currentTrackKey = `${currentTrack.title}::${currentTrack.artist}`;
   const normalizedLyrics = useMemo(
-    () => (lyricsData?.hasSynced ? parseLrcSyncedLyrics(lyricsData.synced) : []),
-    [lyricsData?.hasSynced, lyricsData?.synced],
+    () => (lyricsData?.hasSynced ? lyricsData.lines : []),
+    [lyricsData?.hasSynced, lyricsData?.lines],
   );
   const presetsData = presets.data ?? [];
   const activePreset = useMemo(
