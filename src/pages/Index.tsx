@@ -77,9 +77,9 @@ type SessionUser = {
   };
 };
 
-const LYRIC_OFFSET_DEFAULT_MS = 3000;
-const LYRIC_HOLD_WINDOW_MS = 3000;
+const LYRIC_OFFSET_DEFAULT_MS = 0;
 const LYRIC_CALIBRATION_STORAGE_KEY = "voxaria.lyricCalibrationOffsetMs";
+const LYRIC_HOLD_WINDOW_MS = 3000;
 const KARAOKE_SCORE_TICK_MS = 120;
 const MIN_PITCH_CLARITY = 0.78;
 const OCTAVE_TOLERANCE_SEMITONES = 1;
@@ -124,20 +124,6 @@ const resolveUiErrorMessage = (error: unknown, fallback: string) => {
 
 const getPresetId = (preset: ApiPreset) => preset.id ?? preset.name;
 
-const parseLrcSyncedLyrics = (syncedString: string): LyricLine[] =>
-  syncedString
-    .split("\n")
-    .map((line) => {
-      const match = line.match(/^\[(\d{1,2}):(\d{2})\.(\d{2,3})\]\s*(.*)$/);
-      if (!match) return null;
-
-      const [, mm, ss, cs, text] = match;
-      const timeSeconds =
-        Number.parseInt(mm, 10) * 60 + Number.parseInt(ss, 10) + Number.parseInt(cs, 10) / (cs.length === 2 ? 100 : 1000);
-
-      return { timeSeconds, text: text.trim() };
-    })
-    .filter((line): line is LyricLine => Boolean(line && line.text.length > 0));
 
 const queueRow = (
   track: ApiTrack,
@@ -212,6 +198,18 @@ const queueRow = (
   </article>
 );
 
+const getLyricLineClassName = (idx: number, activeLine: number) => {
+  if (idx === activeLine) {
+    return "text-primary font-bold scale-105 drop-shadow-[0_0_8px_hsl(var(--primary)/0.5)]";
+  }
+
+  if (idx < activeLine) {
+    return "text-muted-foreground/50 font-medium scale-95";
+  }
+
+  return "text-muted-foreground/80 font-medium scale-95";
+};
+
 const Index = () => {
   const queryClient = useQueryClient();
   const API_BASE_URL = BASE_URL;
@@ -245,6 +243,7 @@ const Index = () => {
   const [isGeneratingKaraoke, setIsGeneratingKaraoke] = useState(false);
   const [currentPitchMap, setCurrentPitchMap] = useState<ApiPitchMap | null>(null);
   const [interpolatedPositionMs, setInterpolatedPositionMs] = useState(0);
+  const [currentPlaybackTimeSec, setCurrentPlaybackTimeSec] = useState(0);
 
   const animationFrameRef = useRef<number | null>(null);
   const karaokeAnimationRef = useRef<number | null>(null);
@@ -572,8 +571,8 @@ const Index = () => {
 
   const currentTrackKey = `${currentTrack.title}::${currentTrack.artist}`;
   const normalizedLyrics = useMemo(
-    () => (lyricsData?.hasSynced ? parseLrcSyncedLyrics(lyricsData.synced) : []),
-    [lyricsData?.hasSynced, lyricsData?.synced],
+    () => (lyricsData?.hasSynced ? lyricsData.lines : []),
+    [lyricsData?.hasSynced, lyricsData?.lines],
   );
   const presetsData = presets.data ?? [];
   const activePreset = useMemo(
@@ -608,7 +607,7 @@ const Index = () => {
     setIsFetchingLyrics(true);
     try {
       const response = await voxariaApi.fetchLyrics(currentTrack.title, currentTrack.artist, activeGuildId);
-      const hasAnyLyrics = Boolean(response.synced?.trim() || response.plain?.trim());
+      const hasAnyLyrics = Boolean(response.lines.length || response.plain?.trim());
 
       if (!hasAnyLyrics) {
         setLyricsData(null);
@@ -625,20 +624,20 @@ const Index = () => {
         plain: response.plain || "",
         synced: response.synced || "",
         hasSynced: response.hasSynced,
+        lines: response.lines ?? [],
       });
       setLyricsUnavailable(false);
-      if (response.hasSynced && response.synced.trim()) {
-        const parsed = parseLrcSyncedLyrics(response.synced);
+      if (response.hasSynced && response.lines.length) {
         const adjustedPositionSec = (player.data?.currentPositionSec ?? 0) + (player.data?.playing && !player.data?.isPaused ? 0.1 : 0);
         const startingLine = Math.max(
           0,
-          parsed.reduce((last, line, index) => (line.timeSeconds <= adjustedPositionSec ? index : last), 0),
+          response.lines.reduce((last, line, index) => (line.timeSeconds <= adjustedPositionSec ? index : last), 0),
         );
         setActiveLine(startingLine);
         requestAnimationFrame(() => {
           lyricsContainerRef.current
             ?.querySelector<HTMLElement>(`[data-lyric-index='${startingLine}']`)
-            ?.scrollIntoView({ block: "nearest", behavior: "auto" });
+            ?.scrollIntoView({ block: "center", behavior: "smooth" });
         });
       } else {
         setActiveLine(0);
@@ -707,6 +706,11 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
+    const playbackPositionSec = Math.max(0, interpolatedPositionMs / 1000);
+    setCurrentPlaybackTimeSec(playbackPositionSec);
+  }, [interpolatedPositionMs]);
+
+  useEffect(() => {
     const adjustedMs = Math.max(0, (player.data?.currentPositionSec ?? 0) * 1000 - syncOffsetMs);
     smoothTimeRef.current = adjustedMs;
 
@@ -720,21 +724,23 @@ const Index = () => {
 
     if (!normalizedLyrics.length) return;
 
-    const nextIndex = normalizedLyrics.findIndex((line, idx) => {
-      const start = line.timeSeconds * 1000;
-      const nextStart = (normalizedLyrics[idx + 1]?.timeSeconds ?? Number.POSITIVE_INFINITY) * 1000;
-      const end = nextStart;
-      return adjustedMs >= start && adjustedMs < end;
-    });
+    let resolved = -1;
+    for (let index = normalizedLyrics.length - 1; index >= 0; index -= 1) {
+      if (normalizedLyrics[index].timeSeconds <= currentPlaybackTimeSec) {
+        resolved = index;
+        break;
+      }
+    }
 
-    const resolved = nextIndex >= 0 ? nextIndex : Math.max(0, normalizedLyrics.length - 1);
     if (resolved !== activeLineRef.current) {
       activeLineRef.current = resolved;
       setActiveLine(resolved);
-      const target = lyricsContainerRef.current?.querySelector<HTMLElement>(`[data-lyric-index='${resolved}']`);
-      target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      if (resolved >= 0) {
+        const target = lyricsContainerRef.current?.querySelector<HTMLElement>(`[data-lyric-index='${resolved}']`);
+        target?.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
     }
-  }, [normalizedLyrics, player.data?.currentPositionSec, player.data?.durationSec, syncOffsetMs]);
+  }, [currentPlaybackTimeSec, interpolatedPositionMs, normalizedLyrics, player.data?.currentPositionSec, player.data?.durationSec, syncOffsetMs]);
 
   useEffect(() => {
     if (!lyricsData?.hasSynced || !normalizedLyrics.length) return;
@@ -751,7 +757,7 @@ const Index = () => {
       requestAnimationFrame(() => {
         lyricsContainerRef.current
           ?.querySelector<HTMLElement>(`[data-lyric-index='${startingLine}']`)
-          ?.scrollIntoView({ block: "nearest", behavior: "auto" });
+          ?.scrollIntoView({ block: "center", behavior: "smooth" });
       });
     }
   }, [lyricsData?.hasSynced, normalizedLyrics, player.data?.currentPositionSec]);
@@ -1187,19 +1193,9 @@ const Index = () => {
                       data-lyric-index={idx}
                       data-lyric-time={line.timeSeconds}
                       onClick={() => handleLyricSync(idx, line.timeSeconds)}
-                      className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
-                        idx === activeLine
-                          ? "border-l-[4px] bg-accent/35 text-primary neon-glow neon-text"
-                          : "border-transparent text-foreground/85 hover:bg-muted/50 hover:text-foreground"
-                      }`}
-                      style={
-                        idx === activeLine
-                          ? {
-                              borderLeftColor: "#39ff14",
-                              textShadow: "0 0 10px rgba(57, 255, 20, 0.8)",
-                            }
-                          : undefined
-                      }
+                      className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl leading-relaxed transition-all duration-300 ease-in-out hover:bg-muted/50 ${
+                        idx === activeLine ? "border-l-primary bg-accent/35 neon-glow" : "border-transparent"
+                      } ${getLyricLineClassName(idx, activeLine)}`}
                     >
                       {line.text}
                     </button>
@@ -1364,19 +1360,9 @@ const Index = () => {
                                 data-lyric-index={idx}
                                 data-lyric-time={line.timeSeconds}
                                 onClick={() => handleLyricSync(idx, line.timeSeconds)}
-                                className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
-                                  idx === activeLine
-                                    ? "border-l-[4px] bg-accent/35 text-primary neon-glow neon-text"
-                                    : "border-transparent text-foreground/85 hover:bg-muted/50 hover:text-foreground"
-                                }`}
-                                style={
-                                  idx === activeLine
-                                    ? {
-                                        borderLeftColor: "#39ff14",
-                                        textShadow: "0 0 10px rgba(57, 255, 20, 0.8)",
-                                      }
-                                    : undefined
-                                }
+                                className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl leading-relaxed transition-all duration-300 ease-in-out hover:bg-muted/50 ${
+                                  idx === activeLine ? "border-l-primary bg-accent/35 neon-glow" : "border-transparent"
+                                } ${getLyricLineClassName(idx, activeLine)}`}
                               >
                                 {line.text}
                               </button>
