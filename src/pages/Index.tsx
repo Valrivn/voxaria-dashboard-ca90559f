@@ -612,20 +612,20 @@ const Index = () => {
         plain: response.plain || "",
         synced: response.synced || "",
         hasSynced: response.hasSynced,
+        lines: response.lines ?? [],
       });
       setLyricsUnavailable(false);
-      if (response.hasSynced && response.synced.trim()) {
-        const parsed = parseLrcSyncedLyrics(response.synced);
+      if (response.hasSynced && response.lines.length) {
         const adjustedPositionSec = (player.data?.currentPositionSec ?? 0) + (player.data?.playing && !player.data?.isPaused ? 0.1 : 0);
         const startingLine = Math.max(
           0,
-          parsed.reduce((last, line, index) => (line.timeSeconds <= adjustedPositionSec ? index : last), 0),
+          response.lines.reduce((last, line, index) => (line.timeSeconds <= adjustedPositionSec ? index : last), 0),
         );
         setActiveLine(startingLine);
         requestAnimationFrame(() => {
           lyricsContainerRef.current
             ?.querySelector<HTMLElement>(`[data-lyric-index='${startingLine}']`)
-            ?.scrollIntoView({ block: "nearest", behavior: "auto" });
+            ?.scrollIntoView({ block: "center", behavior: "smooth" });
         });
       } else {
         setActiveLine(0);
@@ -694,6 +694,8 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
+    setCurrentPlaybackTimeSec(Math.max(0, interpolatedPositionMs / 1000));
+
     const adjustedMs = Math.max(0, (player.data?.currentPositionSec ?? 0) * 1000 - syncOffsetMs);
     smoothTimeRef.current = adjustedMs;
 
@@ -707,21 +709,14 @@ const Index = () => {
 
     if (!normalizedLyrics.length) return;
 
-    const nextIndex = normalizedLyrics.findIndex((line, idx) => {
-      const start = line.timeSeconds * 1000;
-      const nextStart = (normalizedLyrics[idx + 1]?.timeSeconds ?? Number.POSITIVE_INFINITY) * 1000;
-      const end = nextStart;
-      return adjustedMs >= start && adjustedMs < end;
-    });
-
-    const resolved = nextIndex >= 0 ? nextIndex : Math.max(0, normalizedLyrics.length - 1);
+    const resolved = normalizedLyrics.findLastIndex((line) => line.timeSeconds <= currentPlaybackTimeSec);
     if (resolved !== activeLineRef.current) {
       activeLineRef.current = resolved;
       setActiveLine(resolved);
       const target = lyricsContainerRef.current?.querySelector<HTMLElement>(`[data-lyric-index='${resolved}']`);
-      target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      target?.scrollIntoView({ block: "center", behavior: "smooth" });
     }
-  }, [normalizedLyrics, player.data?.currentPositionSec, player.data?.durationSec, syncOffsetMs]);
+  }, [currentPlaybackTimeSec, interpolatedPositionMs, normalizedLyrics, player.data?.currentPositionSec, player.data?.durationSec, syncOffsetMs]);
 
   useEffect(() => {
     if (!lyricsData?.hasSynced || !normalizedLyrics.length) return;
