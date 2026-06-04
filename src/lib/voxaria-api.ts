@@ -86,6 +86,7 @@ export type ApiLyrics = {
   plain: string;
   synced: string;
   hasSynced: boolean;
+  lines: Array<{ timeSeconds: number; text: string }>;
 };
 
 export type ApiPitchFrame = {
@@ -400,6 +401,17 @@ const normalizeSearchCatalogPayload = (payload: unknown): ApiSearchResult[] => {
 const normalizeLyricsPayload = (payload: unknown): ApiLyrics => {
   const root = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
   const lyrics = root.lyrics && typeof root.lyrics === "object" ? (root.lyrics as Record<string, unknown>) : root;
+  const rawLines = Array.isArray(lyrics.lines) ? lyrics.lines : [];
+  const lines = rawLines
+    .map((line) => {
+      const item = line && typeof line === "object" ? (line as Record<string, unknown>) : {};
+      const timeSeconds = toNumber(item.timeSeconds);
+      const text = toStringValue(item.text);
+
+      if (timeSeconds === null || text === null) return null;
+      return { timeSeconds, text };
+    })
+    .filter((line): line is { timeSeconds: number; text: string } => Boolean(line));
 
   return {
     title: toStringValue(lyrics.title) ?? "",
@@ -407,7 +419,8 @@ const normalizeLyricsPayload = (payload: unknown): ApiLyrics => {
     source: toStringValue(lyrics.source) ?? "unknown",
     plain: toStringValue(lyrics.plain) ?? "",
     synced: toStringValue(lyrics.synced) ?? "",
-    hasSynced: toBoolean(lyrics.hasSynced) ?? Boolean(toStringValue(lyrics.synced)),
+    hasSynced: toBoolean(lyrics.hasSynced) ?? lines.length > 0,
+    lines,
   };
 };
 

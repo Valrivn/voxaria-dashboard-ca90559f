@@ -77,9 +77,7 @@ type SessionUser = {
   };
 };
 
-const LYRIC_OFFSET_DEFAULT_MS = 3000;
 const LYRIC_HOLD_WINDOW_MS = 3000;
-const LYRIC_CALIBRATION_STORAGE_KEY = "voxaria.lyricCalibrationOffsetMs";
 const KARAOKE_SCORE_TICK_MS = 120;
 const MIN_PITCH_CLARITY = 0.78;
 const OCTAVE_TOLERANCE_SEMITONES = 1;
@@ -124,20 +122,6 @@ const resolveUiErrorMessage = (error: unknown, fallback: string) => {
 
 const getPresetId = (preset: ApiPreset) => preset.id ?? preset.name;
 
-const parseLrcSyncedLyrics = (syncedString: string): LyricLine[] =>
-  syncedString
-    .split("\n")
-    .map((line) => {
-      const match = line.match(/^\[(\d{1,2}):(\d{2})\.(\d{2,3})\]\s*(.*)$/);
-      if (!match) return null;
-
-      const [, mm, ss, cs, text] = match;
-      const timeSeconds =
-        Number.parseInt(mm, 10) * 60 + Number.parseInt(ss, 10) + Number.parseInt(cs, 10) / (cs.length === 2 ? 100 : 1000);
-
-      return { timeSeconds, text: text.trim() };
-    })
-    .filter((line): line is LyricLine => Boolean(line && line.text.length > 0));
 
 const queueRow = (
   track: ApiTrack,
