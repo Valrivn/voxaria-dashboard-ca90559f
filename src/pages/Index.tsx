@@ -198,6 +198,18 @@ const queueRow = (
   </article>
 );
 
+const getLyricLineClassName = (idx: number, activeLine: number) => {
+  if (idx === activeLine) {
+    return "text-primary font-bold scale-105 drop-shadow-[0_0_8px_hsl(var(--primary)/0.5)]";
+  }
+
+  if (idx < activeLine) {
+    return "text-muted-foreground/50 font-medium scale-95";
+  }
+
+  return "text-muted-foreground/80 font-medium scale-95";
+};
+
 const Index = () => {
   const queryClient = useQueryClient();
   const API_BASE_URL = BASE_URL;
@@ -694,6 +706,11 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
+    const playbackPositionSec = Math.max(0, interpolatedPositionMs / 1000);
+    setCurrentPlaybackTimeSec(playbackPositionSec);
+  }, [interpolatedPositionMs]);
+
+  useEffect(() => {
     setCurrentPlaybackTimeSec(Math.max(0, interpolatedPositionMs / 1000));
 
     const adjustedMs = Math.max(0, (player.data?.currentPositionSec ?? 0) * 1000 - syncOffsetMs);
@@ -1178,19 +1195,9 @@ const Index = () => {
                       data-lyric-index={idx}
                       data-lyric-time={line.timeSeconds}
                       onClick={() => handleLyricSync(idx, line.timeSeconds)}
-                      className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
-                        idx === activeLine
-                          ? "border-l-[4px] bg-accent/35 text-primary neon-glow neon-text"
-                          : "border-transparent text-foreground/85 hover:bg-muted/50 hover:text-foreground"
-                      }`}
-                      style={
-                        idx === activeLine
-                          ? {
-                              borderLeftColor: "#39ff14",
-                              textShadow: "0 0 10px rgba(57, 255, 20, 0.8)",
-                            }
-                          : undefined
-                      }
+                      className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl leading-relaxed transition-all duration-300 ease-in-out hover:bg-muted/50 ${
+                        idx === activeLine ? "border-l-primary bg-accent/35 neon-glow" : "border-transparent"
+                      } ${getLyricLineClassName(idx, activeLine)}`}
                     >
                       {line.text}
                     </button>
@@ -1355,19 +1362,9 @@ const Index = () => {
                                 data-lyric-index={idx}
                                 data-lyric-time={line.timeSeconds}
                                 onClick={() => handleLyricSync(idx, line.timeSeconds)}
-                                className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl font-bold leading-relaxed transition ${
-                                  idx === activeLine
-                                    ? "border-l-[4px] bg-accent/35 text-primary neon-glow neon-text"
-                                    : "border-transparent text-foreground/85 hover:bg-muted/50 hover:text-foreground"
-                                }`}
-                                style={
-                                  idx === activeLine
-                                    ? {
-                                        borderLeftColor: "#39ff14",
-                                        textShadow: "0 0 10px rgba(57, 255, 20, 0.8)",
-                                      }
-                                    : undefined
-                                }
+                                className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl leading-relaxed transition-all duration-300 ease-in-out hover:bg-muted/50 ${
+                                  idx === activeLine ? "border-l-primary bg-accent/35 neon-glow" : "border-transparent"
+                                } ${getLyricLineClassName(idx, activeLine)}`}
                               >
                                 {line.text}
                               </button>
