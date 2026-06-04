@@ -595,7 +595,7 @@ const Index = () => {
     setIsFetchingLyrics(true);
     try {
       const response = await voxariaApi.fetchLyrics(currentTrack.title, currentTrack.artist, activeGuildId);
-      const hasAnyLyrics = Boolean(response.synced?.trim() || response.plain?.trim());
+      const hasAnyLyrics = Boolean(response.lines.length || response.plain?.trim());
 
       if (!hasAnyLyrics) {
         setLyricsData(null);
@@ -709,12 +709,21 @@ const Index = () => {
 
     if (!normalizedLyrics.length) return;
 
-    const resolved = normalizedLyrics.findLastIndex((line) => line.timeSeconds <= currentPlaybackTimeSec);
+    let resolved = -1;
+    for (let index = normalizedLyrics.length - 1; index >= 0; index -= 1) {
+      if (normalizedLyrics[index].timeSeconds <= currentPlaybackTimeSec) {
+        resolved = index;
+        break;
+      }
+    }
+
     if (resolved !== activeLineRef.current) {
       activeLineRef.current = resolved;
       setActiveLine(resolved);
-      const target = lyricsContainerRef.current?.querySelector<HTMLElement>(`[data-lyric-index='${resolved}']`);
-      target?.scrollIntoView({ block: "center", behavior: "smooth" });
+      if (resolved >= 0) {
+        const target = lyricsContainerRef.current?.querySelector<HTMLElement>(`[data-lyric-index='${resolved}']`);
+        target?.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
     }
   }, [currentPlaybackTimeSec, interpolatedPositionMs, normalizedLyrics, player.data?.currentPositionSec, player.data?.durationSec, syncOffsetMs]);
 
@@ -733,7 +742,7 @@ const Index = () => {
       requestAnimationFrame(() => {
         lyricsContainerRef.current
           ?.querySelector<HTMLElement>(`[data-lyric-index='${startingLine}']`)
-          ?.scrollIntoView({ block: "nearest", behavior: "auto" });
+          ?.scrollIntoView({ block: "center", behavior: "smooth" });
       });
     }
   }, [lyricsData?.hasSynced, normalizedLyrics, player.data?.currentPositionSec]);
