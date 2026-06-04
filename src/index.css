@@ -153,3 +153,9 @@ All colors MUST be HSL.
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--primary) / 0.5);
 }
+
+/* Fix lyrics layout cutting off the first letter when highlighted/scaled */
+[data-lyric-index] {
+  padding-left: 1.25rem !important; /* Move text safely away from the left border edge */
+  overflow: visible !important; /* Prevent clipping on active scales */
+}
