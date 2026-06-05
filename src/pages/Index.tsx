@@ -836,6 +836,13 @@ const Index = () => {
 
   const displayVolume = useMemo(() => Math.min(200, Math.max(0, Math.round(uiVolume))), [uiVolume]);
   const boostActive = displayVolume > 100;
+  const streakMultiplier = Math.max(1, Math.floor(karaokeCombo / 4) + 1);
+  const targetNoteDisplay = targetNoteLabel !== "--" ? `${targetNoteLabel} (${Math.round(targetNoteHz)}Hz)` : "--";
+  const arenaBallOffsetPct = useMemo(() => {
+    if (!detectedPitchHz || !targetNoteHz) return 50;
+    const semitoneDelta = 12 * Math.log2(detectedPitchHz / targetNoteHz);
+    return Math.max(5, Math.min(95, 50 + semitoneDelta * 10));
+  }, [detectedPitchHz, targetNoteHz]);
 
   const loading = queue.isLoading || status.isLoading || cache.isLoading || settings.isLoading || player.isLoading;
   const playerUnavailable = player.isError;
