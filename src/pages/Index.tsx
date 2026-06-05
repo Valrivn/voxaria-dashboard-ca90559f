@@ -1201,21 +1201,28 @@ const Index = () => {
     const analyzer = analyserRef.current;
     const byteBuffer = micByteBufferRef.current;
     const floatBuffer = micFloatBufferRef.current;
+    const VOCAL_ENERGY_THRESHOLD = 0.03; // RMS energy threshold constant for noise gate
 
     const detectFrame = () => {
       analyzer.getByteTimeDomainData(byteBuffer as unknown as Uint8Array<ArrayBuffer>);
       analyzer.getFloatTimeDomainData(floatBuffer as unknown as Float32Array<ArrayBuffer>);
 
-      let rms = 0;
-      for (let i = 0; i < floatBuffer.length; i += 1) rms += floatBuffer[i] * floatBuffer[i];
-      rms = Math.sqrt(rms / floatBuffer.length);
+      // 1. Calculate the RMS energy of the current frame to determine proximity volume
+      let sum = 0;
+      for (let i = 0; i < floatBuffer.length; i += 1) {
+        sum += floatBuffer[i] * floatBuffer[i];
+      }
+      const rms = Math.sqrt(sum / floatBuffer.length);
+      const isEnergyAboveGate = rms >= VOCAL_ENERGY_THRESHOLD;
+
       const db = 20 * Math.log10(Math.max(rms, 1e-8));
-      const gated = db < KARAOKE_GATE_THRESHOLD_DB;
+      const gated = db < KARAOKE_GATE_THRESHOLD_DB || !isEnergyAboveGate;
 
       const volumePercent = Math.min(100, Math.max(0, ((db + 80) / 80) * 100));
       setMicVolumePercent(Number.isFinite(volumePercent) ? volumePercent : 0);
       setIsSingingActive(!gated);
 
+      // 2. Gate the Pitch Tracking: Only process if energy gate is open
       if (!gated) {
         const pitchHz = detectPitchFromAutocorrelation(floatBuffer, audioContextRef.current?.sampleRate ?? 44100);
         if (pitchHz > 0) {
@@ -1257,8 +1264,15 @@ const Index = () => {
 
     karaokeIntervalRef.current = window.setInterval(() => {
       const sungHz = latestPitchHzRef.current;
+      const userMidi = userPitchMidiRef.current;
 
-      // 1. Humming fallback scoring if pitchBlocks is empty
+      // 3. Freeze the Scoring Engine: If userPitchMidi is null (silent or gated), pause scoring immediately
+      if (userMidi === null || !sungHz) {
+        // Do not update score, do not increment streak, do not break streak. Freeze.
+        return;
+      }
+
+      // Humming fallback scoring if pitchBlocks is empty
       if (!pitchBlocks.length) {
         if (isSingingActive) {
           const nextCombo = karaokeComboRef.current + 1;
@@ -1279,9 +1293,9 @@ const Index = () => {
         return;
       }
 
-      // 2. Standard pitch matching scoring using pitchBlocks target note
+      // Standard pitch matching scoring using pitchBlocks target note
       const activeTargetMidi = targetNoteMidiRef.current;
-      if (activeTargetMidi === null || !sungHz) {
+      if (activeTargetMidi === null) {
         if (karaokeComboRef.current !== 0) {
           karaokeComboRef.current = 0;
           setKaraokeCombo(0);
