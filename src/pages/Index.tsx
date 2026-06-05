@@ -318,6 +318,8 @@ const Index = () => {
   const micFloatBufferRef = useRef<Float32Array<ArrayBuffer> | null>(null);
   const targetNoteMidiRef = useRef<number | null>(null);
   const latestPitchHzRef = useRef<number | null>(null);
+  const pitchCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [pitchBlocks, setPitchBlocks] = useState<Array<{ note: number; start: number; duration: number }>>([]);
   const backendClockRef = useRef({ positionMs: 0, receivedAt: 0, paused: true, durationMs: 0 });
   const lastClockEmitRef = useRef(0);
 
@@ -1065,6 +1067,7 @@ const Index = () => {
       targetNoteMidiRef.current = null;
 
       setKaraokeEnabled(true);
+      void fetchPitchData();
       setKaraokeScore(0);
       setKaraokeCombo(0);
       setMaxCombo(0);
@@ -1295,6 +1298,187 @@ const Index = () => {
 
     return () => window.clearInterval(endWatcher);
   }, [karaokeEnabled, player.data?.durationSec, stopKaraoke]);
+
+  const fetchPitchData = useCallback(async () => {
+    if (!currentTrack.title) return;
+    try {
+      const authHeaders = activeSessionToken ? { Authorization: `Bearer ${activeSessionToken}` } : {};
+      const response = await fetch(`${API_BASE_URL}/music/karaoke/pitch-data`, {
+        headers: {
+          "ngrok-skip-browser-warning": "true",
+          "x-guild-id": activeGuildId,
+          "x-user-id": activeUserDiscordId,
+          ...authHeaders,
+        },
+      });
+      const data = await response.json();
+      if (data.success && Array.isArray(data.blocks)) {
+        setPitchBlocks(data.blocks);
+        console.log("Loaded snapped pitch blocks count:", data.blocks.length);
+      } else {
+        setPitchBlocks([]);
+      }
+    } catch (err) {
+      console.error("Failed to load snapped pitch blocks:", err);
+      setPitchBlocks([]);
+    }
+  }, [API_BASE_URL, activeGuildId, activeUserDiscordId, activeSessionToken, currentTrack.title]);
+
+  useEffect(() => {
+    void fetchPitchData();
+  }, [currentTrackKey, fetchPitchData]);
+
+  // Update target MIDI note from blocks
+  useEffect(() => {
+    if (!pitchBlocks.length) {
+      targetNoteMidiRef.current = null;
+      return;
+    }
+    const currentBlock = pitchBlocks.find(
+      (b) => currentPlaybackTimeSec >= b.start && currentPlaybackTimeSec <= b.start + b.duration
+    );
+    targetNoteMidiRef.current = currentBlock ? currentBlock.note : null;
+  }, [pitchBlocks, currentPlaybackTimeSec]);
+
+  // Draw Pitch Canvas function
+  const drawPitchCanvas = useCallback(() => {
+    const canvas = pitchCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+
+    // Clear background
+    ctx.fillStyle = "#1e293b"; 
+    ctx.fillRect(0, 0, width, height);
+
+    // Draw grid
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.08)";
+    ctx.lineWidth = 1;
+    const gridSize = 28;
+    for (let x = 0; x < width; x += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+    for (let y = 0; y < height; y += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+
+    const centerY = height / 2;
+
+    // 1. Center Target Pitch Line (horizontal green line in middle)
+    ctx.strokeStyle = "#00ff66";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(width, centerY);
+    ctx.stroke();
+
+    // Helper lines (+/- 100 cents)
+    const helperOffset = height * 0.35;
+
+    // 2. Relative Helper lines above (+100 cents) and below (-100 cents)
+    ctx.strokeStyle = "rgba(0, 255, 102, 0.35)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 4]);
+
+    ctx.beginPath();
+    ctx.moveTo(0, centerY - helperOffset);
+    ctx.lineTo(width, centerY - helperOffset);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, centerY + helperOffset);
+    ctx.lineTo(width, centerY + helperOffset);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+
+    // Draw labels
+    ctx.fillStyle = "rgba(0, 255, 102, 0.6)";
+    ctx.font = "10px sans-serif";
+    ctx.fillText("+100 cents", 8, centerY - helperOffset - 4);
+    ctx.fillText("-100 cents", 8, centerY + helperOffset + 12);
+    ctx.fillText("Target Pitch", 8, centerY - 6);
+
+    // Draw scrolling target note blocks
+    const activeTargetMidi = targetNoteMidiRef.current;
+    if (pitchBlocks.length > 0) {
+      ctx.fillStyle = "rgba(0, 255, 102, 0.15)";
+      ctx.strokeStyle = "rgba(0, 255, 102, 0.4)";
+      ctx.lineWidth = 1.5;
+
+      pitchBlocks.forEach((block) => {
+        const x = width / 2 + (block.start - currentPlaybackTimeSec) * 120;
+        const w = block.duration * 120;
+
+        if (x + w < 0 || x > width) return;
+
+        const currentTargetMidi = activeTargetMidi !== null ? activeTargetMidi : 60;
+        const semitoneDiff = block.note - currentTargetMidi;
+        const y = centerY - semitoneDiff * (helperOffset / 2);
+
+        const blockHeight = 12;
+        ctx.beginPath();
+        ctx.roundRect(x, y - blockHeight / 2, w, blockHeight, 4);
+        ctx.fill();
+        ctx.stroke();
+      });
+    }
+
+    // 3. User pitch dot
+    const sungHz = latestPitchHzRef.current;
+    if (activeTargetMidi !== null && sungHz && sungHz > 0) {
+      const targetHz = midiToFrequency(activeTargetMidi);
+      const semitoneDelta = 12 * Math.log2(sungHz / targetHz);
+      const centsDelta = semitoneDelta * 100;
+
+      const deltaNormalized = centsDelta / 100; // -1 to +1 at helper boundary
+      let dotY = centerY - deltaNormalized * helperOffset;
+      dotY = Math.max(10, Math.min(height - 10, dotY));
+
+      // Draw red dot representing user pitch
+      ctx.fillStyle = "#ff0033";
+      ctx.beginPath();
+      ctx.arc(width / 2, dotY, 8, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = "rgba(255, 0, 51, 0.8)";
+      ctx.fillStyle = "#ff3366";
+      ctx.beginPath();
+      ctx.arc(width / 2, dotY, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+  }, [pitchBlocks, currentPlaybackTimeSec]);
+
+  // RequestAnimationFrame loop for canvas rendering when tab is active
+  useEffect(() => {
+    if (activeDashboardTab !== "karaoke-arena") return;
+
+    let animId: number;
+    const render = () => {
+      drawPitchCanvas();
+      animId = requestAnimationFrame(render);
+    };
+    animId = requestAnimationFrame(render);
+
+    return () => {
+      cancelAnimationFrame(animId);
+    };
+  }, [activeDashboardTab, drawPitchCanvas]);
 
   useEffect(() => () => stopKaraoke(), [stopKaraoke]);
 
@@ -1624,7 +1808,7 @@ const Index = () => {
           ) : (
             <section className="flex-1 p-4">
               <div className="grid h-full gap-4 xl:grid-cols-[1.8fr_380px]">
-                <article className="flex min-h-[560px] flex-col rounded-md border border-primary/35 bg-panel-soft/75 p-4 shadow-soft neon-edge">
+                <article className="flex h-[680px] flex-col rounded-md border border-primary/35 bg-panel-soft/75 p-4 shadow-soft neon-edge">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h2 className="text-xl font-bold text-primary">Karaoke Arena</h2>
@@ -1633,28 +1817,51 @@ const Index = () => {
                     <Badge className="bg-accent text-accent-foreground">Target: {targetNoteDisplay}</Badge>
                   </div>
 
-                  <div className="relative mb-4 h-[340px] overflow-hidden rounded-md border border-border/70 bg-panel"
-                    style={{
-                      backgroundImage:
-                        "linear-gradient(hsl(var(--border)/0.3) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--border)/0.3) 1px, transparent 1px)",
-                      backgroundSize: "28px 28px",
-                    }}
-                  >
-                    <div className="absolute left-0 right-0 top-1/2 border-t border-dashed border-primary/70" />
-                    <div className="absolute right-3 top-3 rounded-md border border-border/70 bg-panel-soft/80 px-2 py-1 text-xs text-primary">
-                      Target Note Frequency: {targetNoteDisplay}
+                  {/* Vertical Split Panel: 70% Lyrics, 30% Pitch Visualizer Canvas */}
+                  <div className="flex flex-1 flex-col gap-3 min-h-0 mb-4">
+                    {/* Top 70% Synced Lyrics Scroll Panel */}
+                    <div className="h-[68%] relative rounded-md border border-border/70 bg-panel/75 flex flex-col overflow-hidden">
+                      <div className="absolute right-3 top-3 z-10 rounded-md border border-border/70 bg-panel-soft/80 px-2 py-1 text-xs text-primary">
+                        Live Lyrics
+                      </div>
+                      <div ref={lyricsContainerRef} className="h-full overflow-y-auto px-4 py-6">
+                        <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 py-2">
+                          {lyricsData?.hasSynced && normalizedLyrics.length ? (
+                            normalizedLyrics.map((line, idx) => (
+                              <button
+                                key={`${line.text}-${idx}`}
+                                data-lyric-index={idx}
+                                data-lyric-time={line.timeSeconds}
+                                onClick={() => handleLyricSync(idx, line.timeSeconds)}
+                                className={`block w-full rounded-md px-6 py-3 text-center leading-relaxed whitespace-normal break-words transition-all duration-300 ease-in-out hover:bg-accent/10 ${
+                                  idx === activeLine
+                                    ? "text-primary text-3xl font-extrabold scale-[1.05] drop-shadow-[0_0_12px_hsl(var(--primary)/0.65)]"
+                                    : "text-muted-foreground/50 text-xl font-medium scale-[0.98]"
+                                }`}
+                              >
+                                {line.text}
+                              </button>
+                            ))
+                          ) : lyricsData?.plain?.trim() ? (
+                            <p className="whitespace-pre-line rounded-md bg-panel/70 px-6 py-4 text-center text-xl leading-relaxed text-foreground/80">
+                              {lyricsData.plain}
+                            </p>
+                          ) : (
+                            <p className="rounded-md bg-panel/70 px-6 py-4 text-center text-sm text-muted-foreground">
+                              {isFetchingLyrics ? "Loading lyrics..." : "Lyrics not available. Start bot playback to view lyrics."}
+                            </p>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <div
-                      className="absolute top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-all duration-300 ease-in-out"
-                      style={{
-                        left: `${arenaBallOffsetPct}%`,
-                        backgroundColor: isPitchMatching ? "hsl(var(--success))" : "hsl(var(--danger))",
-                        boxShadow: isPitchMatching
-                          ? "0 0 22px hsl(var(--success) / 0.55)"
-                          : "0 0 22px hsl(var(--danger) / 0.5)",
-                        borderColor: isPitchMatching ? "hsl(var(--success))" : "hsl(var(--danger))",
-                      }}
-                    />
+
+                    {/* Bottom 30% Pitch Tracker Canvas */}
+                    <div className="h-[32%] relative rounded-md border border-border/70 bg-panel overflow-hidden">
+                      <canvas
+                        ref={pitchCanvasRef}
+                        className="w-full h-full block"
+                      />
+                    </div>
                   </div>
 
                   <div className="grid gap-2 rounded-md border border-border/70 bg-panel/80 p-3 md:grid-cols-[1fr_1fr]">
