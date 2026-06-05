@@ -970,19 +970,27 @@ const Index = () => {
   };
 
   const loginWithDiscord = () => {
-    const nextUser = {
-      id: "895441968241459271",
-      discordId: "895441968241459271",
-      name: "Hayden",
-      roleLevel: 3,
-      permissions: { dj: true, staff: true },
-    };
-    setCurrentUser(nextUser);
-    toast({
-      title: "Connected",
-      description: "Logged in as Hayden (Developer).",
-    });
+    // Redirect to backend OAuth2 passport mount
+    window.location.href = `${API_BASE_URL}/auth/discord`;
   };
+
+  // Check auth session on app mount
+  useEffect(() => {
+    const fetchSession = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/session`, {
+          headers: { "ngrok-skip-browser-warning": "true" }
+        });
+        const data = await response.json();
+        if (data && data.success && data.loggedInUser) {
+          setCurrentUser(data.loggedInUser);
+        }
+      } catch (err) {
+        console.error("Failed to restore OAuth2 session:", err);
+      }
+    };
+    void fetchSession();
+  }, [API_BASE_URL]);
 
   const logoutDiscord = () => {
     setCurrentUser(null);
