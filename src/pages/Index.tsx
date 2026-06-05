@@ -318,6 +318,9 @@ const Index = () => {
   const targetNoteMidiRef = useRef<number | null>(null);
   const latestPitchHzRef = useRef<number | null>(null);
   const pitchCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cursorYRef = useRef<number | null>(null);
+  const lyricsRetryTimerRef = useRef<number | null>(null);
+  const lyricsRetryElapsedRef = useRef<number>(0);
   const [pitchBlocks, setPitchBlocks] = useState<Array<{ note: number; start: number; duration: number }>>([]);
   const backendClockRef = useRef({ positionMs: 0, receivedAt: 0, paused: true, durationMs: 0 });
   const lastClockEmitRef = useRef(0);
@@ -1089,6 +1092,10 @@ const Index = () => {
   const stopKaraoke = useCallback(() => {
     if (karaokeAnimationRef.current) cancelAnimationFrame(karaokeAnimationRef.current);
     if (karaokeIntervalRef.current) window.clearInterval(karaokeIntervalRef.current);
+    if (lyricsRetryTimerRef.current) {
+      window.clearInterval(lyricsRetryTimerRef.current);
+      lyricsRetryTimerRef.current = null;
+    }
     karaokeAnimationRef.current = null;
     karaokeIntervalRef.current = null;
 
@@ -1228,7 +1235,7 @@ const Index = () => {
   }, [karaokeEnabled]);
 
   useEffect(() => {
-    if (!karaokeEnabled || !currentPitchMap?.frames?.length) return;
+    if (!karaokeEnabled) return;
 
     const toSemitone = (pitchHz: number) => {
       const midi = Math.round(12 * Math.log2(pitchHz / 440) + 69);
@@ -1236,14 +1243,32 @@ const Index = () => {
     };
 
     karaokeIntervalRef.current = window.setInterval(() => {
-      const nowMs = smoothTimeRef.current;
-      const targetFrame = getNearestPitchFrame(currentPitchMap.frames, nowMs);
-      const targetSemitone = targetFrame ? ((targetFrame.midi % 12) + 12) % 12 : null;
       const sungHz = latestPitchHzRef.current;
 
-      targetNoteMidiRef.current = targetFrame?.midi ?? null;
+      // 1. Humming fallback scoring if pitchBlocks is empty
+      if (!pitchBlocks.length) {
+        if (isSingingActive) {
+          const nextCombo = karaokeComboRef.current + 1;
+          const gain = 100 + nextCombo * 8;
+          const nextScore = karaokeScoreRef.current + gain;
 
-      if (!targetFrame || targetSemitone === null || !sungHz) {
+          karaokeComboRef.current = nextCombo;
+          karaokeScoreRef.current = nextScore;
+          karaokeMaxComboRef.current = Math.max(karaokeMaxComboRef.current, nextCombo);
+
+          setKaraokeCombo(nextCombo);
+          setKaraokeScore(nextScore);
+          setMaxCombo(karaokeMaxComboRef.current);
+        } else if (karaokeComboRef.current !== 0) {
+          karaokeComboRef.current = 0;
+          setKaraokeCombo(0);
+        }
+        return;
+      }
+
+      // 2. Standard pitch matching scoring using pitchBlocks target note
+      const activeTargetMidi = targetNoteMidiRef.current;
+      if (activeTargetMidi === null || !sungHz) {
         if (karaokeComboRef.current !== 0) {
           karaokeComboRef.current = 0;
           setKaraokeCombo(0);
@@ -1251,11 +1276,12 @@ const Index = () => {
         return;
       }
 
+      const targetSemitone = ((activeTargetMidi % 12) + 12) % 12;
       const sungMidi = Math.round(12 * Math.log2(sungHz / 440) + 69);
       const sungSemitone = toSemitone(sungHz);
       const delta = Math.abs(sungSemitone - targetSemitone);
       const wrappedDelta = Math.min(delta, 12 - delta);
-      const centsDiff = Math.abs((sungMidi - targetFrame.midi) * 100);
+      const centsDiff = Math.abs((sungMidi - activeTargetMidi) * 100);
       const onNote = wrappedDelta <= OCTAVE_TOLERANCE_SEMITONES && centsDiff <= KARAOKE_MATCH_TOLERANCE_CENTS;
 
       if (onNote) {
@@ -1280,7 +1306,7 @@ const Index = () => {
       if (karaokeIntervalRef.current) window.clearInterval(karaokeIntervalRef.current);
       karaokeIntervalRef.current = null;
     };
-  }, [karaokeEnabled, currentPitchMap, getNearestPitchFrame]);
+  }, [karaokeEnabled, pitchBlocks, isSingingActive]);
 
   useEffect(() => {
     if (!karaokeEnabled || !player.data?.durationSec) return;
@@ -1323,9 +1349,52 @@ const Index = () => {
     }
   }, [API_BASE_URL, activeGuildId, activeUserDiscordId, activeSessionToken, currentTrack.title]);
 
+  const startLyricsAutoFetchLoop = useCallback(() => {
+    if (lyricsRetryTimerRef.current) {
+      window.clearInterval(lyricsRetryTimerRef.current);
+    }
+    lyricsRetryElapsedRef.current = 0;
+
+    const poll = async () => {
+      if (!currentTrack.title) return;
+      try {
+        const response = await voxariaApi.fetchLyrics(currentTrack.title, currentTrack.artist, activeGuildId);
+        const hasAnyLyrics = Boolean(response.lines.length || response.plain?.trim());
+        if (hasAnyLyrics) {
+          setLyricsData(response);
+          setLyricsUnavailable(false);
+          if (response.hasSynced) {
+            if (lyricsRetryTimerRef.current) {
+              window.clearInterval(lyricsRetryTimerRef.current);
+              lyricsRetryTimerRef.current = null;
+            }
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Lyrics retry poll failed:", err);
+      }
+
+      lyricsRetryElapsedRef.current += 10;
+      if (lyricsRetryElapsedRef.current >= 60) {
+        if (lyricsRetryTimerRef.current) {
+          window.clearInterval(lyricsRetryTimerRef.current);
+          lyricsRetryTimerRef.current = null;
+        }
+        toast({ title: "Lyrics sync timed out", description: "Falling back to Genius / plain lyrics." });
+      }
+    };
+
+    void poll();
+    lyricsRetryTimerRef.current = window.setInterval(poll, 10000);
+  }, [currentTrack.title, currentTrack.artist, activeGuildId]);
+
   useEffect(() => {
     void fetchPitchData();
-  }, [currentTrackKey, fetchPitchData]);
+    if (karaokeEnabled) {
+      startLyricsAutoFetchLoop();
+    }
+  }, [currentTrackKey, fetchPitchData, karaokeEnabled, startLyricsAutoFetchLoop]);
 
   // Update target MIDI note from blocks
   useEffect(() => {
@@ -1446,19 +1515,48 @@ const Index = () => {
       });
     }
 
-    // 3. User pitch arrow pointing right
+    // 3. User pitch cursor (standby red dot vs active right-pointing arrow with smoothing)
     const sungHz = latestPitchHzRef.current;
-    if (activeTargetMidi !== null && sungHz && sungHz > 0) {
+    const isVocalActive = isSingingActive && sungHz && sungHz > 0 && activeTargetMidi !== null;
+
+    let targetY = centerY;
+    if (isVocalActive && activeTargetMidi !== null) {
       const targetHz = midiToFrequency(activeTargetMidi);
       const semitoneDelta = 12 * Math.log2(sungHz / targetHz);
       const centsDelta = semitoneDelta * 100;
-
       const deltaNormalized = centsDelta / 100; // -1 to +1 at helper boundary
-      let dotY = centerY - deltaNormalized * helperOffset;
-      dotY = Math.max(10, Math.min(height - 10, dotY));
+      targetY = centerY - deltaNormalized * helperOffset;
+    }
 
+    // Apply Y smoothing (lerp)
+    if (cursorYRef.current === null) {
+      cursorYRef.current = targetY;
+    } else {
+      cursorYRef.current = cursorYRef.current + (targetY - cursorYRef.current) * 0.15;
+    }
+
+    const dotY = Math.max(10, Math.min(height - 10, cursorYRef.current));
+
+    if (!isVocalActive) {
+      // Draw silent standby red dot dead in the middle
+      ctx.fillStyle = "#ff3366"; // Danger pink/red from theme
+      ctx.beginPath();
+      ctx.arc(xTimeBar, dotY, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Glow effect on red dot
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = "#ff3366";
+      ctx.strokeStyle = "#ff3366";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    } else if (activeTargetMidi !== null) {
+      const targetHz = midiToFrequency(activeTargetMidi);
+      const semitoneDelta = 12 * Math.log2(sungHz / targetHz);
+      const centsDelta = semitoneDelta * 100;
       const isMatch = Math.abs(centsDelta) <= KARAOKE_MATCH_TOLERANCE_CENTS;
-      const cursorColor = isMatch ? "#00ff66" : "#ff3366"; // Neon green success vs Danger red/pink
+      const cursorColor = isMatch ? "#00ff66" : "#ff3366";
 
       // Draw triangle pointing right at xTimeBar
       ctx.fillStyle = cursorColor;
@@ -1469,7 +1567,7 @@ const Index = () => {
       ctx.closePath();
       ctx.fill();
 
-      // Glow effect
+      // Glow effect on arrow
       ctx.shadowBlur = 10;
       ctx.shadowColor = cursorColor;
       ctx.strokeStyle = cursorColor;
