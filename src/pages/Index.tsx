@@ -1020,23 +1020,33 @@ const Index = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const audioContext = new AudioContext();
       const source = audioContext.createMediaStreamSource(stream);
+      const highPass = audioContext.createBiquadFilter();
+      highPass.type = "highpass";
+      highPass.frequency.value = 80;
+
+      const lowPass = audioContext.createBiquadFilter();
+      lowPass.type = "lowpass";
+      lowPass.frequency.value = 1000;
+
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = 2048;
-      source.connect(analyser);
-
-      const detector = PitchDetector.forNumberArray(analyser.fftSize);
-      detector.clarityThreshold = MIN_PITCH_CLARITY;
+      source.connect(highPass);
+      highPass.connect(lowPass);
+      lowPass.connect(analyser);
 
       mediaStreamRef.current = stream;
       audioContextRef.current = audioContext;
       analyserRef.current = analyser;
-      pitchDetectorRef.current = detector;
       micByteBufferRef.current = new Uint8Array(analyser.fftSize);
+      micFloatBufferRef.current = new Float32Array(analyser.fftSize);
+      targetNoteMidiRef.current = null;
 
       setKaraokeEnabled(true);
       setKaraokeScore(0);
       setKaraokeCombo(0);
       setMaxCombo(0);
+      setMicVolumePercent(0);
+      setIsSingingActive(false);
       karaokeScoreRef.current = 0;
       karaokeComboRef.current = 0;
       karaokeMaxComboRef.current = 0;
@@ -1066,10 +1076,13 @@ const Index = () => {
     }
 
     analyserRef.current = null;
-    pitchDetectorRef.current = null;
     micByteBufferRef.current = null;
+    micFloatBufferRef.current = null;
+    targetNoteMidiRef.current = null;
     latestPitchHzRef.current = null;
     setDetectedPitchHz(null);
+    setMicVolumePercent(0);
+    setIsSingingActive(false);
     setKaraokeEnabled(false);
   }, []);
 
