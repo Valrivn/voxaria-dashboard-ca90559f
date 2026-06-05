@@ -837,12 +837,16 @@ const Index = () => {
   const displayVolume = useMemo(() => Math.min(200, Math.max(0, Math.round(uiVolume))), [uiVolume]);
   const boostActive = displayVolume > 100;
   const streakMultiplier = Math.max(1, Math.floor(karaokeCombo / 4) + 1);
-  const targetNoteDisplay = targetNoteLabel !== "--" ? `${targetNoteLabel} (${Math.round(targetNoteHz)}Hz)` : "--";
+  const targetNoteDisplay =
+    targetNoteMidiRef.current === null
+      ? "--"
+      : `${midiToNoteLabel(targetNoteMidiRef.current)} (${Math.round(midiToFrequency(targetNoteMidiRef.current))}Hz)`;
   const arenaBallOffsetPct = useMemo(() => {
-    if (!detectedPitchHz || !targetNoteHz) return 50;
-    const semitoneDelta = 12 * Math.log2(detectedPitchHz / targetNoteHz);
+    if (!detectedPitchHz || targetNoteMidiRef.current === null) return 50;
+    const targetHz = midiToFrequency(targetNoteMidiRef.current);
+    const semitoneDelta = 12 * Math.log2(detectedPitchHz / targetHz);
     return Math.max(5, Math.min(95, 50 + semitoneDelta * 10));
-  }, [detectedPitchHz, targetNoteHz]);
+  }, [detectedPitchHz, currentPlaybackTimeSec]);
 
   const loading = queue.isLoading || status.isLoading || cache.isLoading || settings.isLoading || player.isLoading;
   const playerUnavailable = player.isError;
@@ -1111,21 +1115,13 @@ const Index = () => {
     return NOTE_NAMES[((midi % 12) + 12) % 12];
   }, [detectedPitchHz]);
 
-  const targetNoteLabel = useMemo(() => {
-    if (targetNoteMidiRef.current === null) return "--";
-    return midiToNoteLabel(targetNoteMidiRef.current);
-  }, [currentPlaybackTimeSec, currentPitchMap?.frames]);
-
-  const targetNoteHz = useMemo(() => {
-    if (targetNoteMidiRef.current === null) return 0;
-    return midiToFrequency(targetNoteMidiRef.current);
-  }, [currentPlaybackTimeSec, currentPitchMap?.frames]);
-
   const pitchMatchDelta = useMemo(() => {
     if (!detectedPitchHz || targetNoteMidiRef.current === null) return Number.POSITIVE_INFINITY;
+    const targetHz = midiToFrequency(targetNoteMidiRef.current);
+    const targetMidi = 69 + 12 * Math.log2(targetHz / 440);
     const sungMidi = 69 + 12 * Math.log2(detectedPitchHz / 440);
-    return Math.abs((sungMidi - targetNoteMidiRef.current) * 100);
-  }, [detectedPitchHz, currentPlaybackTimeSec, currentPitchMap?.frames]);
+    return Math.abs((sungMidi - targetMidi) * 100);
+  }, [detectedPitchHz, currentPlaybackTimeSec]);
 
   const isPitchMatching = Number.isFinite(pitchMatchDelta) && pitchMatchDelta <= KARAOKE_MATCH_TOLERANCE_CENTS;
 
