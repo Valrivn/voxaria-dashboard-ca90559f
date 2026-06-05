@@ -328,29 +328,7 @@ const Index = () => {
   const backendClockRef = useRef({ positionMs: 0, receivedAt: 0, paused: true, durationMs: 0 });
   const lastClockEmitRef = useRef(0);
 
-  const [sessionUsers, setSessionUsers] = useState<SessionUser[]>([
-    {
-      id: "u1",
-      discordId: "u1",
-      name: "Astra",
-      roleLevel: 2,
-      permissions: { dj: true, staff: true },
-    },
-    {
-      id: "u2",
-      discordId: "u2",
-      name: "Kai",
-      roleLevel: 1,
-      permissions: { dj: true, staff: false },
-    },
-    {
-      id: "u3",
-      discordId: "u3",
-      name: "Nyx",
-      roleLevel: 0,
-      permissions: { dj: false, staff: false },
-    },
-  ]);
+  const [sessionUsers, setSessionUsers] = useState<SessionUser[]>([]);
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
 
   const queue = useQuery({ queryKey: ["queue"], queryFn: voxariaApi.getQueue, refetchInterval: 10000 });
@@ -992,11 +970,17 @@ const Index = () => {
   };
 
   const loginWithDiscord = () => {
-    const nextUser = sessionUsers[0] ?? null;
+    const nextUser = {
+      id: "895441968241459271",
+      discordId: "895441968241459271",
+      name: "Hayden",
+      roleLevel: 3,
+      permissions: { dj: true, staff: true },
+    };
     setCurrentUser(nextUser);
     toast({
-      title: nextUser ? "Connected" : "No session users",
-      description: nextUser ? `Logged in as ${nextUser.name}.` : "No users are available in this session.",
+      title: "Connected",
+      description: "Logged in as Hayden (Developer).",
     });
   };
 
@@ -1149,22 +1133,6 @@ const Index = () => {
         active: isSingingActive,
         score: karaokeScore,
         isCurrentUser: true,
-      },
-      {
-        id: "rival-1",
-        username: "Astra",
-        streak: Math.max(0, maxCombo - 2),
-        active: true,
-        score: Math.max(0, karaokeScore + 520),
-        isCurrentUser: false,
-      },
-      {
-        id: "rival-2",
-        username: "Nyx",
-        streak: Math.max(0, Math.floor(karaokeCombo * 0.8)),
-        active: false,
-        score: Math.max(0, karaokeScore - 180),
-        isCurrentUser: false,
       },
     ]
       .sort((a, b) => b.score - a.score)
