@@ -322,6 +322,7 @@ const Index = () => {
   const pitchCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cursorYRef = useRef<number | null>(null);
   const lyricsRetryTimerRef = useRef<number | null>(null);
+  const fetchPitchTimeoutRef = useRef<number | null>(null);
   const lyricsRetryElapsedRef = useRef<number>(0);
   const [pitchBlocks, setPitchBlocks] = useState<Array<{ note: number; start: number; duration: number }>>([]);
   const backendClockRef = useRef({ positionMs: 0, receivedAt: 0, paused: true, durationMs: 0 });
@@ -1339,6 +1340,11 @@ const Index = () => {
   const fetchPitchData = useCallback(async () => {
     if (!currentTrack.title) return;
     try {
+      if (fetchPitchTimeoutRef.current) {
+        window.clearTimeout(fetchPitchTimeoutRef.current);
+        fetchPitchTimeoutRef.current = null;
+      }
+
       const authHeaders = activeSessionToken ? { Authorization: `Bearer ${activeSessionToken}` } : {};
       const trackIdParam = currentTrack.id ? `?trackId=${encodeURIComponent(currentTrack.id)}` : "";
       const response = await fetch(`${API_BASE_URL}/music/karaoke/pitch-data${trackIdParam}`, {
@@ -1350,9 +1356,16 @@ const Index = () => {
         },
       });
       const data = await response.json();
+
       if (Array.isArray(data)) {
         setPitchBlocks(data);
         console.log("Loaded snapped pitch blocks (raw array):", data.length);
+      } else if (data && data.status === "processing") {
+        setPitchBlocks([]);
+        console.log("Pitch data is processing, scheduling retry...");
+        fetchPitchTimeoutRef.current = window.setTimeout(() => {
+          void fetchPitchData();
+        }, 3000);
       } else if (data && Array.isArray(data.blocks)) {
         setPitchBlocks(data.blocks);
         console.log("Loaded snapped pitch blocks (wrapped):", data.blocks.length);
@@ -1362,6 +1375,9 @@ const Index = () => {
     } catch (err) {
       console.error("Failed to load snapped pitch blocks:", err);
       setPitchBlocks([]);
+      fetchPitchTimeoutRef.current = window.setTimeout(() => {
+        void fetchPitchData();
+      }, 5000);
     }
   }, [API_BASE_URL, activeGuildId, activeUserDiscordId, activeSessionToken, currentTrack.title, currentTrack.id]);
 
@@ -1410,6 +1426,12 @@ const Index = () => {
     if (karaokeEnabled) {
       startLyricsAutoFetchLoop();
     }
+    return () => {
+      if (fetchPitchTimeoutRef.current) {
+        window.clearTimeout(fetchPitchTimeoutRef.current);
+        fetchPitchTimeoutRef.current = null;
+      }
+    };
   }, [currentTrackKey, fetchPitchData, karaokeEnabled, startLyricsAutoFetchLoop]);
 
   // Update target MIDI note from blocks
@@ -1517,7 +1539,7 @@ const Index = () => {
 
         // Absolute Y position mapped directly from note
         const y = mapMidiToY(block.note);
-        const blockHeight = 16;
+        const blockHeight = 14;
 
         // Color coding: success green if active note matches pitch, soft neon blue otherwise
         const isActive = activeTargetMidi === block.note;
