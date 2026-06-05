@@ -285,6 +285,7 @@ const Index = () => {
   const [maxCombo, setMaxCombo] = useState(0);
   const [scoreSummaryOpen, setScoreSummaryOpen] = useState(false);
   const [detectedPitchHz, setDetectedPitchHz] = useState<number | null>(null);
+  const [userPitchMidi, setUserPitchMidi] = useState<number | null>(null);
   const [micVolumePercent, setMicVolumePercent] = useState(0);
   const [isSingingActive, setIsSingingActive] = useState(false);
   const [playlistBuilderQuery, setPlaylistBuilderQuery] = useState("");
@@ -317,6 +318,7 @@ const Index = () => {
   const micFloatBufferRef = useRef<Float32Array<ArrayBuffer> | null>(null);
   const targetNoteMidiRef = useRef<number | null>(null);
   const latestPitchHzRef = useRef<number | null>(null);
+  const userPitchMidiRef = useRef<number | null>(null);
   const pitchCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cursorYRef = useRef<number | null>(null);
   const lyricsRetryTimerRef = useRef<number | null>(null);
@@ -624,8 +626,9 @@ const Index = () => {
       title: (player.data?.cleanedTitle ?? player.data?.title ?? "").trim(),
       artist: (player.data?.cleanedArtist ?? player.data?.artist ?? "").trim(),
       url: (player.data?.trackUrl ?? player.data?.url ?? player.data?.uri ?? "").trim(),
+      id: (player.data?.id ?? player.data?.identifier ?? "").trim(),
     }),
-    [player.data?.cleanedTitle, player.data?.title, player.data?.cleanedArtist, player.data?.artist, player.data?.trackUrl, player.data?.url, player.data?.uri],
+    [player.data?.cleanedTitle, player.data?.title, player.data?.cleanedArtist, player.data?.artist, player.data?.trackUrl, player.data?.url, player.data?.uri, player.data?.id, player.data?.identifier],
   );
 
   const currentTrackKey = `${currentTrack.title}::${currentTrack.artist}`;
@@ -1112,6 +1115,8 @@ const Index = () => {
     micFloatBufferRef.current = null;
     targetNoteMidiRef.current = null;
     latestPitchHzRef.current = null;
+    userPitchMidiRef.current = null;
+    setUserPitchMidi(null);
     setDetectedPitchHz(null);
     setMicVolumePercent(0);
     setIsSingingActive(false);
@@ -1215,13 +1220,20 @@ const Index = () => {
         if (pitchHz > 0) {
           latestPitchHzRef.current = pitchHz;
           setDetectedPitchHz(pitchHz);
+          const midi = 69 + 12 * Math.log2(pitchHz / 440);
+          userPitchMidiRef.current = midi;
+          setUserPitchMidi(midi);
         } else {
           latestPitchHzRef.current = null;
           setDetectedPitchHz(null);
+          userPitchMidiRef.current = null;
+          setUserPitchMidi(null);
         }
       } else {
         latestPitchHzRef.current = null;
         setDetectedPitchHz(null);
+        userPitchMidiRef.current = null;
+        setUserPitchMidi(null);
       }
 
       karaokeAnimationRef.current = requestAnimationFrame(detectFrame);
@@ -1328,7 +1340,8 @@ const Index = () => {
     if (!currentTrack.title) return;
     try {
       const authHeaders = activeSessionToken ? { Authorization: `Bearer ${activeSessionToken}` } : {};
-      const response = await fetch(`${API_BASE_URL}/music/karaoke/pitch-data`, {
+      const trackIdParam = currentTrack.id ? `?trackId=${encodeURIComponent(currentTrack.id)}` : "";
+      const response = await fetch(`${API_BASE_URL}/music/karaoke/pitch-data${trackIdParam}`, {
         headers: {
           "ngrok-skip-browser-warning": "true",
           "x-guild-id": activeGuildId,
@@ -1337,9 +1350,12 @@ const Index = () => {
         },
       });
       const data = await response.json();
-      if (data.success && Array.isArray(data.blocks)) {
+      if (Array.isArray(data)) {
+        setPitchBlocks(data);
+        console.log("Loaded snapped pitch blocks (raw array):", data.length);
+      } else if (data && Array.isArray(data.blocks)) {
         setPitchBlocks(data.blocks);
-        console.log("Loaded snapped pitch blocks count:", data.blocks.length);
+        console.log("Loaded snapped pitch blocks (wrapped):", data.blocks.length);
       } else {
         setPitchBlocks([]);
       }
@@ -1347,7 +1363,7 @@ const Index = () => {
       console.error("Failed to load snapped pitch blocks:", err);
       setPitchBlocks([]);
     }
-  }, [API_BASE_URL, activeGuildId, activeUserDiscordId, activeSessionToken, currentTrack.title]);
+  }, [API_BASE_URL, activeGuildId, activeUserDiscordId, activeSessionToken, currentTrack.title, currentTrack.id]);
 
   const startLyricsAutoFetchLoop = useCallback(() => {
     if (lyricsRetryTimerRef.current) {
@@ -1535,13 +1551,12 @@ const Index = () => {
     }
 
     // 4. User Vocal Pitch Tracking Arrow with Easing
-    const sungHz = latestPitchHzRef.current;
-    const isVocalActive = isSingingActive && sungHz && sungHz > 0;
+    const activeMidi = userPitchMidiRef.current;
+    const isVocalActive = activeMidi !== null;
 
     let targetMidiY = centerY;
     if (isVocalActive) {
-      const sungMidi = 69 + 12 * Math.log2(sungHz / 440);
-      targetMidiY = mapMidiToY(sungMidi);
+      targetMidiY = mapMidiToY(activeMidi);
     } else {
       targetMidiY = centerY;
     }
@@ -1571,14 +1586,14 @@ const Index = () => {
       ctx.stroke();
       ctx.shadowBlur = 0;
     } else {
-      // Singing active: arrow pointing right on Playhead line
+      // Singing active: glowing blue tracker arrowhead pointing right on Playhead line
       let isMatch = false;
       if (activeTargetMidi !== null) {
         const targetHz = midiToFrequency(activeTargetMidi);
-        const semitoneDelta = 12 * Math.log2(sungHz / targetHz);
-        isMatch = Math.abs(semitoneDelta) <= 0.5;
+        const targetMidi = 69 + 12 * Math.log2(targetHz / 440);
+        isMatch = Math.abs(activeMidi - targetMidi) <= 0.5; // +/- 0.5 semitones match
       }
-      const arrowColor = isMatch ? "#22c55e" : "#ff3366"; // Success green vs Danger red
+      const arrowColor = isMatch ? "#22c55e" : "#38bdf8"; // Success green vs Glowing blue
 
       ctx.fillStyle = arrowColor;
       ctx.beginPath();
