@@ -314,8 +314,8 @@ const Index = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const micByteBufferRef = useRef<Uint8Array | null>(null);
-  const micFloatBufferRef = useRef<Float32Array | null>(null);
+  const micByteBufferRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
+  const micFloatBufferRef = useRef<Float32Array<ArrayBuffer> | null>(null);
   const targetNoteMidiRef = useRef<number | null>(null);
   const latestPitchHzRef = useRef<number | null>(null);
   const backendClockRef = useRef({ positionMs: 0, receivedAt: 0, paused: true, durationMs: 0 });
@@ -1049,8 +1049,8 @@ const Index = () => {
       mediaStreamRef.current = stream;
       audioContextRef.current = audioContext;
       analyserRef.current = analyser;
-      micByteBufferRef.current = new Uint8Array(analyser.fftSize);
-      micFloatBufferRef.current = new Float32Array(analyser.fftSize);
+      micByteBufferRef.current = new Uint8Array(new ArrayBuffer(analyser.fftSize));
+      micFloatBufferRef.current = new Float32Array(new ArrayBuffer(analyser.fftSize * Float32Array.BYTES_PER_ELEMENT));
       targetNoteMidiRef.current = null;
 
       setKaraokeEnabled(true);
