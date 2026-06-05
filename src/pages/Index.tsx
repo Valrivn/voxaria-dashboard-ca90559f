@@ -1484,9 +1484,16 @@ const Index = () => {
     ctx.fillRect(0, 0, width, height);
 
     // 2. Draw Horizontal Semitone Grid Lines & C-Note Octave Labels
+    // Absolute Scale Override: If empty, draw all natural semitones of C Major scale (C, D, E, F, G, A, B)
+    const naturalMidiNotes = [48, 50, 52, 53, 55, 57, 59, 60, 62, 64, 65, 67, 69, 71, 72];
     for (let midi = minMidi; midi <= maxMidi; midi++) {
       const y = mapMidiToY(midi);
       const isC = midi % 12 === 0;
+
+      if (pitchBlocks.length === 0) {
+        // Only draw lines if they are part of natural C Major semitones
+        if (!naturalMidiNotes.includes(midi)) continue;
+      }
 
       if (isC) {
         // Brighter structural reference line for C-notes
@@ -1515,6 +1522,24 @@ const Index = () => {
         ctx.lineTo(width, y);
         ctx.stroke();
       }
+    }
+
+    // Render a Central Horizon Target at Middle C (C4 / MIDI = 60) when pitchBlocks is empty
+    if (pitchBlocks.length === 0) {
+      const middleCY = mapMidiToY(60);
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.moveTo(0, middleCY);
+      ctx.lineTo(width, middleCY);
+      ctx.stroke();
+      ctx.setLineDash([]); // Reset line dash
+
+      // Print C4 helper label on central horizon
+      ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+      ctx.font = "bold 10px sans-serif";
+      ctx.fillText("C4 Horizon", width - 80, middleCY - 8);
     }
 
     const xTimeBar = width * 0.25;
@@ -1563,22 +1588,16 @@ const Index = () => {
         ctx.fill();
         ctx.stroke();
       });
-    } else {
-      // Humming baseline at centerY when targetNotes is empty
-      ctx.strokeStyle = "rgba(0, 255, 102, 0.2)";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, centerY);
-      ctx.lineTo(width, centerY);
-      ctx.stroke();
     }
 
     // 4. User Vocal Pitch Tracking Arrow with Easing
     const activeMidi = userPitchMidiRef.current;
-    const isVocalActive = activeMidi !== null;
+    // Unhide Tracker Arrow: If pitchBlocks is empty, arrow should still live-morph if volume > 5%
+    const hasAudioVocal = activeMidi !== null && micVolumePercent > 5;
+    const isVocalActive = pitchBlocks.length > 0 ? activeMidi !== null : hasAudioVocal;
 
     let targetMidiY = centerY;
-    if (isVocalActive) {
+    if (isVocalActive && activeMidi !== null) {
       targetMidiY = mapMidiToY(activeMidi);
     } else {
       targetMidiY = centerY;
@@ -1611,7 +1630,7 @@ const Index = () => {
     } else {
       // Singing active: glowing blue tracker arrowhead pointing right on Playhead line
       let isMatch = false;
-      if (activeTargetMidi !== null) {
+      if (pitchBlocks.length > 0 && activeTargetMidi !== null && activeMidi !== null) {
         const targetHz = midiToFrequency(activeTargetMidi);
         const targetMidi = 69 + 12 * Math.log2(targetHz / 440);
         isMatch = Math.abs(activeMidi - targetMidi) <= 0.5; // +/- 0.5 semitones match
