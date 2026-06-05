@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Circle,
   ChevronDown,
   ChevronUp,
   GripVertical,
   Disc3,
+  Flame,
   History,
   ListMusic,
   Loader2,
@@ -46,7 +48,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PitchDetector } from "pitchy";
 import { toast } from "@/hooks/use-toast";
 import { AuditLogViewer } from "@/components/AuditLogViewer";
 import {
@@ -81,8 +82,9 @@ const LYRIC_OFFSET_DEFAULT_MS = 0;
 const LYRIC_CALIBRATION_STORAGE_KEY = "voxaria.lyricCalibrationOffsetMs";
 const LYRIC_HOLD_WINDOW_MS = 3000;
 const KARAOKE_SCORE_TICK_MS = 120;
-const MIN_PITCH_CLARITY = 0.78;
 const OCTAVE_TOLERANCE_SEMITONES = 1;
+const KARAOKE_GATE_THRESHOLD_DB = -40;
+const KARAOKE_MATCH_TOLERANCE_CENTS = 45;
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 const navItems: NavItem[] = [
@@ -200,14 +202,63 @@ const queueRow = (
 
 const getLyricLineClassName = (idx: number, activeLine: number) => {
   if (idx === activeLine) {
-    return "text-primary font-bold scale-105 drop-shadow-[0_0_8px_hsl(var(--primary)/0.5)]";
+    return "text-primary font-bold scale-[1.08] drop-shadow-[0_0_16px_hsl(var(--primary)/0.6)]";
   }
 
   if (idx < activeLine) {
-    return "text-muted-foreground/50 font-medium scale-95";
+    return "text-muted-foreground/50 font-medium scale-[0.96]";
   }
 
-  return "text-muted-foreground/80 font-medium scale-95";
+  return "text-muted-foreground/80 font-medium scale-[0.96]";
+};
+
+const midiToFrequency = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
+
+const midiToNoteLabel = (midi: number) => {
+  const noteIndex = ((Math.round(midi) % 12) + 12) % 12;
+  const octave = Math.floor(Math.round(midi) / 12) - 1;
+  return `${NOTE_NAMES[noteIndex]}${octave}`;
+};
+
+const detectPitchFromAutocorrelation = (samples: ArrayLike<number>, sampleRate: number) => {
+  const size = samples.length;
+  if (size < 2) return 0;
+
+  let rms = 0;
+  for (let i = 0; i < size; i += 1) rms += samples[i] * samples[i];
+  rms = Math.sqrt(rms / size);
+  if (rms < 0.008) return 0;
+
+  const correlations = new Float32Array(size);
+  for (let lag = 0; lag < size; lag += 1) {
+    let sum = 0;
+    for (let i = 0; i < size - lag; i += 1) {
+      sum += samples[i] * samples[i + lag];
+    }
+    correlations[lag] = sum;
+  }
+
+  let bestLag = -1;
+  let bestCorrelation = 0;
+  for (let lag = 8; lag < size / 2; lag += 1) {
+    const correlation = correlations[lag];
+    if (correlation > bestCorrelation) {
+      bestCorrelation = correlation;
+      bestLag = lag;
+    }
+  }
+
+  if (bestLag <= 0) return 0;
+
+  const prev = correlations[Math.max(0, bestLag - 1)] ?? 0;
+  const next = correlations[Math.min(correlations.length - 1, bestLag + 1)] ?? 0;
+  const current = correlations[bestLag] ?? 0;
+  const denom = 2 * (2 * current - prev - next);
+  const shift = denom !== 0 ? (next - prev) / denom : 0;
+  const refinedLag = bestLag + shift;
+
+  if (!Number.isFinite(refinedLag) || refinedLag <= 0) return 0;
+  return sampleRate / refinedLag;
 };
 
 const Index = () => {
@@ -232,8 +283,11 @@ const Index = () => {
   const [karaokeScore, setKaraokeScore] = useState(0);
   const [karaokeCombo, setKaraokeCombo] = useState(0);
   const [maxCombo, setMaxCombo] = useState(0);
+  const [activeDashboardTab, setActiveDashboardTab] = useState<"system-controls" | "karaoke-arena">("system-controls");
   const [scoreSummaryOpen, setScoreSummaryOpen] = useState(false);
   const [detectedPitchHz, setDetectedPitchHz] = useState<number | null>(null);
+  const [micVolumePercent, setMicVolumePercent] = useState(0);
+  const [isSingingActive, setIsSingingActive] = useState(false);
   const [playlistBuilderQuery, setPlaylistBuilderQuery] = useState("");
   const [debouncedPlaylistQuery, setDebouncedPlaylistQuery] = useState("");
   const [playlistImportUrl, setPlaylistImportUrl] = useState("");
@@ -260,8 +314,9 @@ const Index = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const pitchDetectorRef = useRef<PitchDetector<number[]> | null>(null);
-  const micByteBufferRef = useRef<Uint8Array | null>(null);
+  const micByteBufferRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
+  const micFloatBufferRef = useRef<Float32Array<ArrayBuffer> | null>(null);
+  const targetNoteMidiRef = useRef<number | null>(null);
   const latestPitchHzRef = useRef<number | null>(null);
   const backendClockRef = useRef({ positionMs: 0, receivedAt: 0, paused: true, durationMs: 0 });
   const lastClockEmitRef = useRef(0);
@@ -781,6 +836,17 @@ const Index = () => {
 
   const displayVolume = useMemo(() => Math.min(200, Math.max(0, Math.round(uiVolume))), [uiVolume]);
   const boostActive = displayVolume > 100;
+  const streakMultiplier = Math.max(1, Math.floor(karaokeCombo / 4) + 1);
+  const targetNoteDisplay =
+    targetNoteMidiRef.current === null
+      ? "--"
+      : `${midiToNoteLabel(targetNoteMidiRef.current)} (${Math.round(midiToFrequency(targetNoteMidiRef.current))}Hz)`;
+  const arenaBallOffsetPct = useMemo(() => {
+    if (!detectedPitchHz || targetNoteMidiRef.current === null) return 50;
+    const targetHz = midiToFrequency(targetNoteMidiRef.current);
+    const semitoneDelta = 12 * Math.log2(detectedPitchHz / targetHz);
+    return Math.max(5, Math.min(95, 50 + semitoneDelta * 10));
+  }, [detectedPitchHz, currentPlaybackTimeSec]);
 
   const loading = queue.isLoading || status.isLoading || cache.isLoading || settings.isLoading || player.isLoading;
   const playerUnavailable = player.isError;
@@ -943,6 +1009,18 @@ const Index = () => {
     return nearest.midi % 12;
   }, []);
 
+  const getNearestPitchFrame = useCallback((frames: ApiPitchMap["frames"], atMs: number) => {
+    if (!frames.length) return null;
+
+    let nearest = frames[0];
+    for (let i = 1; i < frames.length; i += 1) {
+      const candidate = frames[i];
+      if (Math.abs(candidate.timeMs - atMs) < Math.abs(nearest.timeMs - atMs)) nearest = candidate;
+    }
+
+    return nearest;
+  }, []);
+
   const startKaraoke = async () => {
     if (isGeneratingKaraoke) return;
     if (!activeGuildId || !currentTrack.url) {
@@ -965,23 +1043,33 @@ const Index = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const audioContext = new AudioContext();
       const source = audioContext.createMediaStreamSource(stream);
+      const highPass = audioContext.createBiquadFilter();
+      highPass.type = "highpass";
+      highPass.frequency.value = 80;
+
+      const lowPass = audioContext.createBiquadFilter();
+      lowPass.type = "lowpass";
+      lowPass.frequency.value = 1000;
+
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = 2048;
-      source.connect(analyser);
-
-      const detector = PitchDetector.forNumberArray(analyser.fftSize);
-      detector.clarityThreshold = MIN_PITCH_CLARITY;
+      source.connect(highPass);
+      highPass.connect(lowPass);
+      lowPass.connect(analyser);
 
       mediaStreamRef.current = stream;
       audioContextRef.current = audioContext;
       analyserRef.current = analyser;
-      pitchDetectorRef.current = detector;
-      micByteBufferRef.current = new Uint8Array(analyser.fftSize);
+      micByteBufferRef.current = new Uint8Array(new ArrayBuffer(analyser.fftSize));
+      micFloatBufferRef.current = new Float32Array(new ArrayBuffer(analyser.fftSize * Float32Array.BYTES_PER_ELEMENT));
+      targetNoteMidiRef.current = null;
 
       setKaraokeEnabled(true);
       setKaraokeScore(0);
       setKaraokeCombo(0);
       setMaxCombo(0);
+      setMicVolumePercent(0);
+      setIsSingingActive(false);
       karaokeScoreRef.current = 0;
       karaokeComboRef.current = 0;
       karaokeMaxComboRef.current = 0;
@@ -1011,10 +1099,13 @@ const Index = () => {
     }
 
     analyserRef.current = null;
-    pitchDetectorRef.current = null;
     micByteBufferRef.current = null;
+    micFloatBufferRef.current = null;
+    targetNoteMidiRef.current = null;
     latestPitchHzRef.current = null;
     setDetectedPitchHz(null);
+    setMicVolumePercent(0);
+    setIsSingingActive(false);
     setKaraokeEnabled(false);
   }, []);
 
@@ -1023,6 +1114,48 @@ const Index = () => {
     const midi = Math.round(12 * Math.log2(detectedPitchHz / 440) + 69);
     return NOTE_NAMES[((midi % 12) + 12) % 12];
   }, [detectedPitchHz]);
+
+  const pitchMatchDelta = useMemo(() => {
+    if (!detectedPitchHz || targetNoteMidiRef.current === null) return Number.POSITIVE_INFINITY;
+    const targetHz = midiToFrequency(targetNoteMidiRef.current);
+    const targetMidi = 69 + 12 * Math.log2(targetHz / 440);
+    const sungMidi = 69 + 12 * Math.log2(detectedPitchHz / 440);
+    return Math.abs((sungMidi - targetMidi) * 100);
+  }, [detectedPitchHz, currentPlaybackTimeSec]);
+
+  const isPitchMatching = Number.isFinite(pitchMatchDelta) && pitchMatchDelta <= KARAOKE_MATCH_TOLERANCE_CENTS;
+
+  const contestants = useMemo(
+    () => [
+      {
+        id: currentUser?.id ?? "current",
+        username: currentUser?.name ?? "You",
+        streak: karaokeCombo,
+        active: isSingingActive,
+        score: karaokeScore,
+        isCurrentUser: true,
+      },
+      {
+        id: "rival-1",
+        username: "Astra",
+        streak: Math.max(0, maxCombo - 2),
+        active: true,
+        score: Math.max(0, karaokeScore + 520),
+        isCurrentUser: false,
+      },
+      {
+        id: "rival-2",
+        username: "Nyx",
+        streak: Math.max(0, Math.floor(karaokeCombo * 0.8)),
+        active: false,
+        score: Math.max(0, karaokeScore - 180),
+        isCurrentUser: false,
+      },
+    ]
+      .sort((a, b) => b.score - a.score)
+      .map((contestant, index) => ({ ...contestant, rank: index + 1 })),
+    [currentUser?.id, currentUser?.name, isSingingActive, karaokeCombo, karaokeScore, maxCombo],
+  );
 
   useEffect(() => {
     if (!presetsData.length) {
@@ -1048,20 +1181,35 @@ const Index = () => {
   }, [maxCombo]);
 
   useEffect(() => {
-    if (!karaokeEnabled || !analyserRef.current || !pitchDetectorRef.current || !micByteBufferRef.current) return;
+    if (!karaokeEnabled || !analyserRef.current || !micByteBufferRef.current || !micFloatBufferRef.current) return;
 
     const analyzer = analyserRef.current;
-    const detector = pitchDetectorRef.current;
     const byteBuffer = micByteBufferRef.current;
+    const floatBuffer = micFloatBufferRef.current;
 
     const detectFrame = () => {
       analyzer.getByteTimeDomainData(byteBuffer as unknown as Uint8Array<ArrayBuffer>);
-      const normalizedSamples = Array.from(byteBuffer, (sample) => (sample - 128) / 128);
-      const [pitchHz, clarity] = detector.findPitch(normalizedSamples, audioContextRef.current?.sampleRate ?? 44100);
+      analyzer.getFloatTimeDomainData(floatBuffer as unknown as Float32Array<ArrayBuffer>);
 
-      if (pitchHz > 0 && clarity >= MIN_PITCH_CLARITY) {
-        latestPitchHzRef.current = pitchHz;
-        setDetectedPitchHz(pitchHz);
+      let rms = 0;
+      for (let i = 0; i < floatBuffer.length; i += 1) rms += floatBuffer[i] * floatBuffer[i];
+      rms = Math.sqrt(rms / floatBuffer.length);
+      const db = 20 * Math.log10(Math.max(rms, 1e-8));
+      const gated = db < KARAOKE_GATE_THRESHOLD_DB;
+
+      const volumePercent = Math.min(100, Math.max(0, ((db + 80) / 80) * 100));
+      setMicVolumePercent(Number.isFinite(volumePercent) ? volumePercent : 0);
+      setIsSingingActive(!gated);
+
+      if (!gated) {
+        const pitchHz = detectPitchFromAutocorrelation(floatBuffer, audioContextRef.current?.sampleRate ?? 44100);
+        if (pitchHz > 0) {
+          latestPitchHzRef.current = pitchHz;
+          setDetectedPitchHz(pitchHz);
+        } else {
+          latestPitchHzRef.current = null;
+          setDetectedPitchHz(null);
+        }
       } else {
         latestPitchHzRef.current = null;
         setDetectedPitchHz(null);
@@ -1087,10 +1235,13 @@ const Index = () => {
 
     karaokeIntervalRef.current = window.setInterval(() => {
       const nowMs = smoothTimeRef.current;
-      const targetSemitone = getNearestPitchSemitone(currentPitchMap.frames, nowMs);
+      const targetFrame = getNearestPitchFrame(currentPitchMap.frames, nowMs);
+      const targetSemitone = targetFrame ? ((targetFrame.midi % 12) + 12) % 12 : null;
       const sungHz = latestPitchHzRef.current;
 
-      if (targetSemitone === null || !sungHz) {
+      targetNoteMidiRef.current = targetFrame?.midi ?? null;
+
+      if (!targetFrame || targetSemitone === null || !sungHz) {
         if (karaokeComboRef.current !== 0) {
           karaokeComboRef.current = 0;
           setKaraokeCombo(0);
@@ -1098,10 +1249,12 @@ const Index = () => {
         return;
       }
 
+      const sungMidi = Math.round(12 * Math.log2(sungHz / 440) + 69);
       const sungSemitone = toSemitone(sungHz);
       const delta = Math.abs(sungSemitone - targetSemitone);
       const wrappedDelta = Math.min(delta, 12 - delta);
-      const onNote = wrappedDelta <= OCTAVE_TOLERANCE_SEMITONES;
+      const centsDiff = Math.abs((sungMidi - targetFrame.midi) * 100);
+      const onNote = wrappedDelta <= OCTAVE_TOLERANCE_SEMITONES && centsDiff <= KARAOKE_MATCH_TOLERANCE_CENTS;
 
       if (onNote) {
         const nextCombo = karaokeComboRef.current + 1;
@@ -1125,7 +1278,7 @@ const Index = () => {
       if (karaokeIntervalRef.current) window.clearInterval(karaokeIntervalRef.current);
       karaokeIntervalRef.current = null;
     };
-  }, [karaokeEnabled, currentPitchMap, getNearestPitchSemitone]);
+  }, [karaokeEnabled, currentPitchMap, getNearestPitchFrame]);
 
   useEffect(() => {
     if (!karaokeEnabled || !player.data?.durationSec) return;
@@ -1184,8 +1337,8 @@ const Index = () => {
                   : `Source: ${lyricsData?.source || "Unknown"}`}
             </div>
 
-            <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
-              <div className="space-y-2">
+            <div ref={lyricsContainerRef} className="h-full overflow-y-auto px-3">
+              <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 py-2">
                 {lyricsData?.hasSynced && normalizedLyrics.length ? (
                   normalizedLyrics.map((line, idx) => (
                     <button
@@ -1193,19 +1346,19 @@ const Index = () => {
                       data-lyric-index={idx}
                       data-lyric-time={line.timeSeconds}
                       onClick={() => handleLyricSync(idx, line.timeSeconds)}
-                      className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl leading-relaxed transition-all duration-300 ease-in-out hover:bg-muted/50 ${
-                        idx === activeLine ? "border-l-primary bg-accent/35 neon-glow" : "border-transparent"
+                      className={`block w-full rounded-md border px-6 py-3 text-center text-xl leading-relaxed whitespace-normal break-words transition-all duration-300 ease-in-out hover:bg-muted/50 ${
+                        idx === activeLine ? "border-primary/65 bg-accent/35 neon-glow" : "border-border/20"
                       } ${getLyricLineClassName(idx, activeLine)}`}
                     >
                       {line.text}
                     </button>
                   ))
                 ) : lyricsData?.plain?.trim() ? (
-                  <p className="whitespace-pre-line rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-foreground/85">
+                  <p className="whitespace-pre-line rounded-md border border-border/60 bg-panel/70 px-6 py-4 text-center text-base leading-relaxed text-foreground/85">
                     {lyricsData.plain}
                   </p>
                 ) : (
-                  <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
+                  <p className="rounded-md border border-border/60 bg-panel/70 px-6 py-4 text-center text-sm text-muted-foreground">
                     {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
                   </p>
                 )}
@@ -1250,42 +1403,66 @@ const Index = () => {
 
         <main className="flex min-h-screen flex-col pb-36">
           <header className="sticky top-0 z-10 border-b border-border/70 bg-background/85 p-4 backdrop-blur-xl">
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border/70 bg-panel-soft/70 p-2 shadow-soft">
-              <Search className="ml-1 h-4 w-4 text-primary" />
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Youtube className="h-4 w-4 text-primary" />
-                <Disc3 className="h-4 w-4 text-primary" />
-                <span className="text-[11px]">Spotify</span>
+            <div className="flex flex-col gap-3 rounded-md border border-border/70 bg-panel-soft/70 p-2 shadow-soft">
+              <div className="flex flex-wrap items-center gap-2">
+                <Search className="ml-1 h-4 w-4 text-primary" />
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Youtube className="h-4 w-4 text-primary" />
+                  <Disc3 className="h-4 w-4 text-primary" />
+                  <span className="text-[11px]">Spotify</span>
+                </div>
+                <Input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search songs..."
+                  className="h-10 min-w-[220px] flex-1 border-none bg-transparent focus-visible:ring-0"
+                />
+                <Button
+                  className="h-10 rounded-md neon-glow"
+                  disabled={searchMutation.isPending || !searchTerm.trim()}
+                  onClick={() => searchMutation.mutate({ query: searchTerm.trim(), guildId: activeGuildId })}
+                >
+                  {searchMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
+                </Button>
+                <Button
+                  className="h-10 rounded-md neon-glow"
+                  disabled={summonBotMutation.isPending}
+                  onClick={() => summonBotMutation.mutate({ guildId: activeGuildId })}
+                >
+                  {summonBotMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Summon Bot"}
+                </Button>
+                <Button variant="outline" className="h-10 border-primary/55 text-primary hover:bg-accent/35" onClick={logoutDiscord}>
+                  <LogOut className="h-4 w-4" />
+                </Button>
               </div>
-              <Input
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search songs..."
-                className="h-10 min-w-[220px] flex-1 border-none bg-transparent focus-visible:ring-0"
-              />
-              <Button
-                className="h-10 rounded-md neon-glow"
-                disabled={searchMutation.isPending || !searchTerm.trim()}
-                onClick={() => searchMutation.mutate({ query: searchTerm.trim(), guildId: activeGuildId })}
-              >
-                {searchMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
-              </Button>
-              <Button
-                className="h-10 rounded-md neon-glow"
-                disabled={summonBotMutation.isPending}
-                onClick={() => summonBotMutation.mutate({ guildId: activeGuildId })}
-              >
-                {summonBotMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Summon Bot"}
-              </Button>
-              <Button variant="outline" className="h-10 border-primary/55 text-primary hover:bg-accent/35" onClick={logoutDiscord}>
-                <LogOut className="h-4 w-4" />
-              </Button>
+
+              <div className="flex justify-end">
+                <div className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-panel/80 p-1">
+                  <Button
+                    type="button"
+                    variant={activeDashboardTab === "system-controls" ? "secondary" : "ghost"}
+                    className="h-8 rounded-sm"
+                    onClick={() => setActiveDashboardTab("system-controls")}
+                  >
+                    System Controls
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={activeDashboardTab === "karaoke-arena" ? "secondary" : "ghost"}
+                    className="h-8 rounded-sm"
+                    onClick={() => setActiveDashboardTab("karaoke-arena")}
+                  >
+                    <Music className="h-3.5 w-3.5" /> Karaoke Arena
+                  </Button>
+                </div>
+              </div>
             </div>
           </header>
 
-          <section className="flex-1 p-4">
-            <div className="grid h-full gap-4 xl:grid-cols-[1.8fr_380px]">
-              <article className="relative flex min-h-[520px] flex-col rounded-md border border-primary/35 bg-panel-soft/75 p-5 shadow-soft neon-edge">
+          {activeDashboardTab === "system-controls" ? (
+            <section className="flex-1 p-4">
+              <div className="grid h-full gap-4 xl:grid-cols-[1.8fr_380px]">
+                <article className="relative flex min-h-[520px] flex-col rounded-md border border-primary/35 bg-panel-soft/75 p-5 shadow-soft neon-edge">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h2 className="text-xl font-bold text-primary">Expanded Visualizer</h2>
@@ -1351,8 +1528,8 @@ const Index = () => {
                       {lyricsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </CollapsibleTrigger>
                     <CollapsibleContent className="h-[380px] border-t border-border/70 px-2 py-2">
-                      <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
-                        <div className="space-y-2">
+                      <div ref={lyricsContainerRef} className="h-full overflow-y-auto px-3">
+                        <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 py-2">
                           {lyricsData?.hasSynced && normalizedLyrics.length ? (
                             normalizedLyrics.map((line, idx) => (
                               <button
@@ -1360,19 +1537,19 @@ const Index = () => {
                                 data-lyric-index={idx}
                                 data-lyric-time={line.timeSeconds}
                                 onClick={() => handleLyricSync(idx, line.timeSeconds)}
-                                className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl leading-relaxed transition-all duration-300 ease-in-out hover:bg-muted/50 ${
-                                  idx === activeLine ? "border-l-primary bg-accent/35 neon-glow" : "border-transparent"
+                                className={`block w-full rounded-md border px-6 py-3 text-center text-2xl leading-relaxed whitespace-normal break-words transition-all duration-300 ease-in-out hover:bg-muted/50 ${
+                                  idx === activeLine ? "border-primary/65 bg-accent/35 neon-glow" : "border-border/20"
                                 } ${getLyricLineClassName(idx, activeLine)}`}
                               >
                                 {line.text}
                               </button>
                             ))
                           ) : lyricsData?.plain?.trim() ? (
-                            <p className="whitespace-pre-line rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-foreground/85">
+                            <p className="whitespace-pre-line rounded-md border border-border/60 bg-panel/70 px-6 py-4 text-center text-base leading-relaxed text-foreground/85">
                               {lyricsData.plain}
                             </p>
                           ) : (
-                            <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
+                            <p className="rounded-md border border-border/60 bg-panel/70 px-6 py-4 text-center text-sm text-muted-foreground">
                               {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
                             </p>
                           )}
@@ -1441,9 +1618,117 @@ const Index = () => {
                     )}
                   </div>
                 </section>
-              </aside>
-            </div>
-          </section>
+                </aside>
+              </div>
+            </section>
+          ) : (
+            <section className="flex-1 p-4">
+              <div className="grid h-full gap-4 xl:grid-cols-[1.8fr_380px]">
+                <article className="flex min-h-[560px] flex-col rounded-md border border-primary/35 bg-panel-soft/75 p-4 shadow-soft neon-edge">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h2 className="text-xl font-bold text-primary">Karaoke Arena</h2>
+                      <p className="text-sm text-muted-foreground">Precision pitch tracking and live contest mode.</p>
+                    </div>
+                    <Badge className="bg-accent text-accent-foreground">Target: {targetNoteDisplay}</Badge>
+                  </div>
+
+                  <div className="relative mb-4 h-[340px] overflow-hidden rounded-md border border-border/70 bg-panel"
+                    style={{
+                      backgroundImage:
+                        "linear-gradient(hsl(var(--border)/0.3) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--border)/0.3) 1px, transparent 1px)",
+                      backgroundSize: "28px 28px",
+                    }}
+                  >
+                    <div className="absolute left-0 right-0 top-1/2 border-t border-dashed border-primary/70" />
+                    <div className="absolute right-3 top-3 rounded-md border border-border/70 bg-panel-soft/80 px-2 py-1 text-xs text-primary">
+                      Target Note Frequency: {targetNoteDisplay}
+                    </div>
+                    <div
+                      className="absolute top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-all duration-300 ease-in-out"
+                      style={{
+                        left: `${arenaBallOffsetPct}%`,
+                        backgroundColor: isPitchMatching ? "hsl(var(--success))" : "hsl(var(--danger))",
+                        boxShadow: isPitchMatching
+                          ? "0 0 22px hsl(var(--success) / 0.55)"
+                          : "0 0 22px hsl(var(--danger) / 0.5)",
+                        borderColor: isPitchMatching ? "hsl(var(--success))" : "hsl(var(--danger))",
+                      }}
+                    />
+                  </div>
+
+                  <div className="grid gap-2 rounded-md border border-border/70 bg-panel/80 p-3 md:grid-cols-[1fr_1fr]">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        variant={karaokeEnabled ? "secondary" : "outline"}
+                        className="border-primary/55 text-primary hover:bg-accent/40"
+                        onClick={() => (karaokeEnabled ? stopKaraoke() : void startKaraoke())}
+                        disabled={isGeneratingKaraoke}
+                      >
+                        {isGeneratingKaraoke ? <Loader2 className="h-4 w-4 animate-spin" /> : karaokeEnabled ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                        {isGeneratingKaraoke ? "Initializing..." : karaokeEnabled ? "Microphone On" : "Join & Start Singing"}
+                      </Button>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Circle className={`h-3 w-3 ${isSingingActive ? "fill-success text-success" : "fill-danger text-danger"}`} />
+                        {isSingingActive ? "Singing detected" : "Waiting for voice"}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 rounded-md border border-border/70 bg-panel-soft/70 p-2">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Vocal Volume Input</span>
+                        <span>{Math.round(micVolumePercent)}%</span>
+                      </div>
+                      <Progress value={micVolumePercent} className="h-2" />
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+                        <Flame className="h-4 w-4" /> Streak multiplier
+                      </div>
+                      <span className="text-lg font-bold text-primary">x{streakMultiplier}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2">
+                      <span className="text-sm text-muted-foreground">Live Score</span>
+                      <span className="font-mono text-2xl font-bold text-primary">{karaokeScore.toLocaleString()}</span>
+                    </div>
+                  </div>
+                </article>
+
+                <aside className="flex min-h-[560px] flex-col rounded-md border border-border/70 bg-panel-soft/70 p-3 shadow-soft">
+                  <h3 className="mb-3 text-base font-semibold text-primary">Contest Leaderboard</h3>
+                  <div className="space-y-2 overflow-y-auto pr-1">
+                    {contestants.map((contestant) => (
+                      <article
+                        key={contestant.id}
+                        className={`rounded-md border p-3 transition-all duration-300 ease-in-out ${
+                          contestant.isCurrentUser
+                            ? "border-success/70 bg-accent/30 shadow-[0_0_16px_hsl(var(--success)/0.25)]"
+                            : "border-border/70 bg-panel/80"
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="border-primary/45 text-primary">#{contestant.rank}</Badge>
+                            <p className="text-sm font-semibold text-foreground">{contestant.username}</p>
+                          </div>
+                          <span className="font-mono text-base font-bold text-primary">{contestant.score.toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Streak: x{contestant.streak}</span>
+                          <span className="inline-flex items-center gap-1">
+                            <Circle className={`h-3 w-3 ${contestant.active ? "fill-success text-success" : "fill-muted text-muted-foreground"}`} />
+                            {contestant.active ? "Singing" : "Idle"}
+                          </span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </aside>
+              </div>
+            </section>
+          )}
 
           <section className="grid gap-4 px-4 pb-4 lg:grid-cols-5">
             <article className="rounded-[12px] border border-primary/35 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl neon-edge">
