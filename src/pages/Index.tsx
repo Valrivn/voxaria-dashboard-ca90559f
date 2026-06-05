@@ -1104,6 +1104,56 @@ const Index = () => {
     return NOTE_NAMES[((midi % 12) + 12) % 12];
   }, [detectedPitchHz]);
 
+  const targetNoteLabel = useMemo(() => {
+    if (targetNoteMidiRef.current === null) return "--";
+    return midiToNoteLabel(targetNoteMidiRef.current);
+  }, [currentPlaybackTimeSec, currentPitchMap?.frames]);
+
+  const targetNoteHz = useMemo(() => {
+    if (targetNoteMidiRef.current === null) return 0;
+    return midiToFrequency(targetNoteMidiRef.current);
+  }, [currentPlaybackTimeSec, currentPitchMap?.frames]);
+
+  const pitchMatchDelta = useMemo(() => {
+    if (!detectedPitchHz || targetNoteMidiRef.current === null) return Number.POSITIVE_INFINITY;
+    const sungMidi = 69 + 12 * Math.log2(detectedPitchHz / 440);
+    return Math.abs((sungMidi - targetNoteMidiRef.current) * 100);
+  }, [detectedPitchHz, currentPlaybackTimeSec, currentPitchMap?.frames]);
+
+  const isPitchMatching = Number.isFinite(pitchMatchDelta) && pitchMatchDelta <= KARAOKE_MATCH_TOLERANCE_CENTS;
+
+  const contestants = useMemo(
+    () => [
+      {
+        id: currentUser?.id ?? "current",
+        username: currentUser?.name ?? "You",
+        streak: karaokeCombo,
+        active: isSingingActive,
+        score: karaokeScore,
+        isCurrentUser: true,
+      },
+      {
+        id: "rival-1",
+        username: "Astra",
+        streak: Math.max(0, maxCombo - 2),
+        active: true,
+        score: Math.max(0, karaokeScore + 520),
+        isCurrentUser: false,
+      },
+      {
+        id: "rival-2",
+        username: "Nyx",
+        streak: Math.max(0, Math.floor(karaokeCombo * 0.8)),
+        active: false,
+        score: Math.max(0, karaokeScore - 180),
+        isCurrentUser: false,
+      },
+    ]
+      .sort((a, b) => b.score - a.score)
+      .map((contestant, index) => ({ ...contestant, rank: index + 1 })),
+    [currentUser?.id, currentUser?.name, isSingingActive, karaokeCombo, karaokeScore, maxCombo],
+  );
+
   useEffect(() => {
     if (!presetsData.length) {
       setActivePresetId(null);
