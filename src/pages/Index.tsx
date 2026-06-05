@@ -1284,8 +1284,8 @@ const Index = () => {
                   : `Source: ${lyricsData?.source || "Unknown"}`}
             </div>
 
-            <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
-              <div className="space-y-2">
+            <div ref={lyricsContainerRef} className="h-full overflow-y-auto px-3">
+              <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 py-2">
                 {lyricsData?.hasSynced && normalizedLyrics.length ? (
                   normalizedLyrics.map((line, idx) => (
                     <button
@@ -1293,19 +1293,19 @@ const Index = () => {
                       data-lyric-index={idx}
                       data-lyric-time={line.timeSeconds}
                       onClick={() => handleLyricSync(idx, line.timeSeconds)}
-                      className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl leading-relaxed transition-all duration-300 ease-in-out hover:bg-muted/50 ${
-                        idx === activeLine ? "border-l-primary bg-accent/35 neon-glow" : "border-transparent"
+                      className={`block w-full rounded-md border px-6 py-3 text-center text-xl leading-relaxed whitespace-normal break-words transition-all duration-300 ease-in-out hover:bg-muted/50 ${
+                        idx === activeLine ? "border-primary/65 bg-accent/35 neon-glow" : "border-border/20"
                       } ${getLyricLineClassName(idx, activeLine)}`}
                     >
                       {line.text}
                     </button>
                   ))
                 ) : lyricsData?.plain?.trim() ? (
-                  <p className="whitespace-pre-line rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-foreground/85">
+                  <p className="whitespace-pre-line rounded-md border border-border/60 bg-panel/70 px-6 py-4 text-center text-base leading-relaxed text-foreground/85">
                     {lyricsData.plain}
                   </p>
                 ) : (
-                  <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
+                  <p className="rounded-md border border-border/60 bg-panel/70 px-6 py-4 text-center text-sm text-muted-foreground">
                     {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
                   </p>
                 )}
@@ -1451,8 +1451,8 @@ const Index = () => {
                       {lyricsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </CollapsibleTrigger>
                     <CollapsibleContent className="h-[380px] border-t border-border/70 px-2 py-2">
-                      <div ref={lyricsContainerRef} className="h-full overflow-y-auto pr-2">
-                        <div className="space-y-2">
+                      <div ref={lyricsContainerRef} className="h-full overflow-y-auto px-3">
+                        <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 py-2">
                           {lyricsData?.hasSynced && normalizedLyrics.length ? (
                             normalizedLyrics.map((line, idx) => (
                               <button
@@ -1460,19 +1460,19 @@ const Index = () => {
                                 data-lyric-index={idx}
                                 data-lyric-time={line.timeSeconds}
                                 onClick={() => handleLyricSync(idx, line.timeSeconds)}
-                                className={`block w-full rounded-sm border-l-4 px-2 py-1.5 text-left text-xl leading-relaxed transition-all duration-300 ease-in-out hover:bg-muted/50 ${
-                                  idx === activeLine ? "border-l-primary bg-accent/35 neon-glow" : "border-transparent"
+                                className={`block w-full rounded-md border px-6 py-3 text-center text-2xl leading-relaxed whitespace-normal break-words transition-all duration-300 ease-in-out hover:bg-muted/50 ${
+                                  idx === activeLine ? "border-primary/65 bg-accent/35 neon-glow" : "border-border/20"
                                 } ${getLyricLineClassName(idx, activeLine)}`}
                               >
                                 {line.text}
                               </button>
                             ))
                           ) : lyricsData?.plain?.trim() ? (
-                            <p className="whitespace-pre-line rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-foreground/85">
+                            <p className="whitespace-pre-line rounded-md border border-border/60 bg-panel/70 px-6 py-4 text-center text-base leading-relaxed text-foreground/85">
                               {lyricsData.plain}
                             </p>
                           ) : (
-                            <p className="rounded-sm border border-border/60 bg-panel/70 px-3 py-2 text-sm text-muted-foreground">
+                            <p className="rounded-md border border-border/60 bg-panel/70 px-6 py-4 text-center text-sm text-muted-foreground">
                               {lyricsServiceUnavailable ? "Service Unavailable" : "Lyrics not available"}
                             </p>
                           )}
