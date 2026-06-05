@@ -283,7 +283,6 @@ const Index = () => {
   const [karaokeScore, setKaraokeScore] = useState(0);
   const [karaokeCombo, setKaraokeCombo] = useState(0);
   const [maxCombo, setMaxCombo] = useState(0);
-  const [activeDashboardTab, setActiveDashboardTab] = useState<"system-controls" | "karaoke-arena">("system-controls");
   const [scoreSummaryOpen, setScoreSummaryOpen] = useState(false);
   const [detectedPitchHz, setDetectedPitchHz] = useState<number | null>(null);
   const [micVolumePercent, setMicVolumePercent] = useState(0);
@@ -1376,6 +1375,15 @@ const Index = () => {
     }
 
     const centerY = height / 2;
+    const xTimeBar = width * 0.20;
+
+    // Draw vertical timeline line
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(xTimeBar, 0);
+    ctx.lineTo(xTimeBar, height);
+    ctx.stroke();
 
     // 1. Center Target Pitch Line (horizontal green line in middle)
     ctx.strokeStyle = "#00ff66";
@@ -1420,7 +1428,8 @@ const Index = () => {
       ctx.lineWidth = 1.5;
 
       pitchBlocks.forEach((block) => {
-        const x = width / 2 + (block.start - currentPlaybackTimeSec) * 120;
+        // Position relative to the 20% left timeline bar
+        const x = xTimeBar + (block.start - currentPlaybackTimeSec) * 120;
         const w = block.duration * 120;
 
         if (x + w < 0 || x > width) return;
@@ -1437,7 +1446,7 @@ const Index = () => {
       });
     }
 
-    // 3. User pitch dot
+    // 3. User pitch arrow pointing right
     const sungHz = latestPitchHzRef.current;
     if (activeTargetMidi !== null && sungHz && sungHz > 0) {
       const targetHz = midiToFrequency(activeTargetMidi);
@@ -1448,37 +1457,43 @@ const Index = () => {
       let dotY = centerY - deltaNormalized * helperOffset;
       dotY = Math.max(10, Math.min(height - 10, dotY));
 
-      // Draw red dot representing user pitch
-      ctx.fillStyle = "#ff0033";
+      const isMatch = Math.abs(centsDelta) <= KARAOKE_MATCH_TOLERANCE_CENTS;
+      const cursorColor = isMatch ? "#00ff66" : "#ff3366"; // Neon green success vs Danger red/pink
+
+      // Draw triangle pointing right at xTimeBar
+      ctx.fillStyle = cursorColor;
       ctx.beginPath();
-      ctx.arc(width / 2, dotY, 8, 0, Math.PI * 2);
+      ctx.moveTo(xTimeBar + 8, dotY); // Tip
+      ctx.lineTo(xTimeBar - 8, dotY - 6); // Top-left
+      ctx.lineTo(xTimeBar - 8, dotY + 6); // Bottom-left
+      ctx.closePath();
       ctx.fill();
 
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = "rgba(255, 0, 51, 0.8)";
-      ctx.fillStyle = "#ff3366";
-      ctx.beginPath();
-      ctx.arc(width / 2, dotY, 4, 0, Math.PI * 2);
-      ctx.fill();
+      // Glow effect
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = cursorColor;
+      ctx.strokeStyle = cursorColor;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
       ctx.shadowBlur = 0;
     }
   }, [pitchBlocks, currentPlaybackTimeSec]);
 
-  // RequestAnimationFrame loop for canvas rendering when tab is active
+  // RequestAnimationFrame loop for canvas rendering when karaoke is active
   useEffect(() => {
-    if (activeDashboardTab !== "karaoke-arena") return;
-
+    if (!karaokeEnabled) return;
+ 
     let animId: number;
     const render = () => {
       drawPitchCanvas();
       animId = requestAnimationFrame(render);
     };
     animId = requestAnimationFrame(render);
-
+ 
     return () => {
       cancelAnimationFrame(animId);
     };
-  }, [activeDashboardTab, drawPitchCanvas]);
+  }, [karaokeEnabled, drawPitchCanvas]);
 
   useEffect(() => () => stopKaraoke(), [stopKaraoke]);
 
@@ -1620,30 +1635,10 @@ const Index = () => {
                 </Button>
               </div>
 
-              <div className="flex justify-end">
-                <div className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-panel/80 p-1">
-                  <Button
-                    type="button"
-                    variant={activeDashboardTab === "system-controls" ? "secondary" : "ghost"}
-                    className="h-8 rounded-sm"
-                    onClick={() => setActiveDashboardTab("system-controls")}
-                  >
-                    System Controls
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={activeDashboardTab === "karaoke-arena" ? "secondary" : "ghost"}
-                    className="h-8 rounded-sm"
-                    onClick={() => setActiveDashboardTab("karaoke-arena")}
-                  >
-                    <Music className="h-3.5 w-3.5" /> Karaoke Arena
-                  </Button>
-                </div>
-              </div>
             </div>
           </header>
 
-          {activeDashboardTab === "system-controls" ? (
+          {!karaokeEnabled ? (
             <section className="flex-1 p-4">
               <div className="grid h-full gap-4 xl:grid-cols-[1.8fr_380px]">
                 <article className="relative flex min-h-[520px] flex-col rounded-md border border-primary/35 bg-panel-soft/75 p-5 shadow-soft neon-edge">
