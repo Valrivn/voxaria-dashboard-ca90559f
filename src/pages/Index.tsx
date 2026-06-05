@@ -1136,7 +1136,7 @@ const Index = () => {
 
     const detectFrame = () => {
       analyzer.getByteTimeDomainData(byteBuffer as unknown as Uint8Array<ArrayBuffer>);
-      analyzer.getFloatTimeDomainData(floatBuffer);
+      analyzer.getFloatTimeDomainData(floatBuffer as unknown as Float32Array);
 
       let rms = 0;
       for (let i = 0; i < floatBuffer.length; i += 1) rms += floatBuffer[i] * floatBuffer[i];
