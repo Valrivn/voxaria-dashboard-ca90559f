@@ -1403,42 +1403,66 @@ const Index = () => {
 
         <main className="flex min-h-screen flex-col pb-36">
           <header className="sticky top-0 z-10 border-b border-border/70 bg-background/85 p-4 backdrop-blur-xl">
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border/70 bg-panel-soft/70 p-2 shadow-soft">
-              <Search className="ml-1 h-4 w-4 text-primary" />
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Youtube className="h-4 w-4 text-primary" />
-                <Disc3 className="h-4 w-4 text-primary" />
-                <span className="text-[11px]">Spotify</span>
+            <div className="flex flex-col gap-3 rounded-md border border-border/70 bg-panel-soft/70 p-2 shadow-soft">
+              <div className="flex flex-wrap items-center gap-2">
+                <Search className="ml-1 h-4 w-4 text-primary" />
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Youtube className="h-4 w-4 text-primary" />
+                  <Disc3 className="h-4 w-4 text-primary" />
+                  <span className="text-[11px]">Spotify</span>
+                </div>
+                <Input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search songs..."
+                  className="h-10 min-w-[220px] flex-1 border-none bg-transparent focus-visible:ring-0"
+                />
+                <Button
+                  className="h-10 rounded-md neon-glow"
+                  disabled={searchMutation.isPending || !searchTerm.trim()}
+                  onClick={() => searchMutation.mutate({ query: searchTerm.trim(), guildId: activeGuildId })}
+                >
+                  {searchMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
+                </Button>
+                <Button
+                  className="h-10 rounded-md neon-glow"
+                  disabled={summonBotMutation.isPending}
+                  onClick={() => summonBotMutation.mutate({ guildId: activeGuildId })}
+                >
+                  {summonBotMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Summon Bot"}
+                </Button>
+                <Button variant="outline" className="h-10 border-primary/55 text-primary hover:bg-accent/35" onClick={logoutDiscord}>
+                  <LogOut className="h-4 w-4" />
+                </Button>
               </div>
-              <Input
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search songs..."
-                className="h-10 min-w-[220px] flex-1 border-none bg-transparent focus-visible:ring-0"
-              />
-              <Button
-                className="h-10 rounded-md neon-glow"
-                disabled={searchMutation.isPending || !searchTerm.trim()}
-                onClick={() => searchMutation.mutate({ query: searchTerm.trim(), guildId: activeGuildId })}
-              >
-                {searchMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
-              </Button>
-              <Button
-                className="h-10 rounded-md neon-glow"
-                disabled={summonBotMutation.isPending}
-                onClick={() => summonBotMutation.mutate({ guildId: activeGuildId })}
-              >
-                {summonBotMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Summon Bot"}
-              </Button>
-              <Button variant="outline" className="h-10 border-primary/55 text-primary hover:bg-accent/35" onClick={logoutDiscord}>
-                <LogOut className="h-4 w-4" />
-              </Button>
+
+              <div className="flex justify-end">
+                <div className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-panel/80 p-1">
+                  <Button
+                    type="button"
+                    variant={activeDashboardTab === "system-controls" ? "secondary" : "ghost"}
+                    className="h-8 rounded-sm"
+                    onClick={() => setActiveDashboardTab("system-controls")}
+                  >
+                    System Controls
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={activeDashboardTab === "karaoke-arena" ? "secondary" : "ghost"}
+                    className="h-8 rounded-sm"
+                    onClick={() => setActiveDashboardTab("karaoke-arena")}
+                  >
+                    <Music className="h-3.5 w-3.5" /> Karaoke Arena
+                  </Button>
+                </div>
+              </div>
             </div>
           </header>
 
-          <section className="flex-1 p-4">
-            <div className="grid h-full gap-4 xl:grid-cols-[1.8fr_380px]">
-              <article className="relative flex min-h-[520px] flex-col rounded-md border border-primary/35 bg-panel-soft/75 p-5 shadow-soft neon-edge">
+          {activeDashboardTab === "system-controls" ? (
+            <section className="flex-1 p-4">
+              <div className="grid h-full gap-4 xl:grid-cols-[1.8fr_380px]">
+                <article className="relative flex min-h-[520px] flex-col rounded-md border border-primary/35 bg-panel-soft/75 p-5 shadow-soft neon-edge">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h2 className="text-xl font-bold text-primary">Expanded Visualizer</h2>
@@ -1594,9 +1618,117 @@ const Index = () => {
                     )}
                   </div>
                 </section>
-              </aside>
-            </div>
-          </section>
+                </aside>
+              </div>
+            </section>
+          ) : (
+            <section className="flex-1 p-4">
+              <div className="grid h-full gap-4 xl:grid-cols-[1.8fr_380px]">
+                <article className="flex min-h-[560px] flex-col rounded-md border border-primary/35 bg-panel-soft/75 p-4 shadow-soft neon-edge">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h2 className="text-xl font-bold text-primary">Karaoke Arena</h2>
+                      <p className="text-sm text-muted-foreground">Precision pitch tracking and live contest mode.</p>
+                    </div>
+                    <Badge className="bg-accent text-accent-foreground">Target: {targetNoteDisplay}</Badge>
+                  </div>
+
+                  <div className="relative mb-4 h-[340px] overflow-hidden rounded-md border border-border/70 bg-panel"
+                    style={{
+                      backgroundImage:
+                        "linear-gradient(hsl(var(--border)/0.3) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--border)/0.3) 1px, transparent 1px)",
+                      backgroundSize: "28px 28px",
+                    }}
+                  >
+                    <div className="absolute left-0 right-0 top-1/2 border-t border-dashed border-primary/70" />
+                    <div className="absolute right-3 top-3 rounded-md border border-border/70 bg-panel-soft/80 px-2 py-1 text-xs text-primary">
+                      Target Note Frequency: {targetNoteDisplay}
+                    </div>
+                    <div
+                      className="absolute top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-all duration-300 ease-in-out"
+                      style={{
+                        left: `${arenaBallOffsetPct}%`,
+                        backgroundColor: isPitchMatching ? "hsl(var(--success))" : "hsl(var(--danger))",
+                        boxShadow: isPitchMatching
+                          ? "0 0 22px hsl(var(--success) / 0.55)"
+                          : "0 0 22px hsl(var(--danger) / 0.5)",
+                        borderColor: isPitchMatching ? "hsl(var(--success))" : "hsl(var(--danger))",
+                      }}
+                    />
+                  </div>
+
+                  <div className="grid gap-2 rounded-md border border-border/70 bg-panel/80 p-3 md:grid-cols-[1fr_1fr]">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        variant={karaokeEnabled ? "secondary" : "outline"}
+                        className="border-primary/55 text-primary hover:bg-accent/40"
+                        onClick={() => (karaokeEnabled ? stopKaraoke() : void startKaraoke())}
+                        disabled={isGeneratingKaraoke}
+                      >
+                        {isGeneratingKaraoke ? <Loader2 className="h-4 w-4 animate-spin" /> : karaokeEnabled ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                        {isGeneratingKaraoke ? "Initializing..." : karaokeEnabled ? "Microphone On" : "Join & Start Singing"}
+                      </Button>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Circle className={`h-3 w-3 ${isSingingActive ? "fill-success text-success" : "fill-danger text-danger"}`} />
+                        {isSingingActive ? "Singing detected" : "Waiting for voice"}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 rounded-md border border-border/70 bg-panel-soft/70 p-2">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Vocal Volume Input</span>
+                        <span>{Math.round(micVolumePercent)}%</span>
+                      </div>
+                      <Progress value={micVolumePercent} className="h-2" />
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+                        <Flame className="h-4 w-4" /> Streak multiplier
+                      </div>
+                      <span className="text-lg font-bold text-primary">x{streakMultiplier}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-md border border-border/70 bg-panel-soft/70 px-3 py-2">
+                      <span className="text-sm text-muted-foreground">Live Score</span>
+                      <span className="font-mono text-2xl font-bold text-primary">{karaokeScore.toLocaleString()}</span>
+                    </div>
+                  </div>
+                </article>
+
+                <aside className="flex min-h-[560px] flex-col rounded-md border border-border/70 bg-panel-soft/70 p-3 shadow-soft">
+                  <h3 className="mb-3 text-base font-semibold text-primary">Contest Leaderboard</h3>
+                  <div className="space-y-2 overflow-y-auto pr-1">
+                    {contestants.map((contestant) => (
+                      <article
+                        key={contestant.id}
+                        className={`rounded-md border p-3 transition-all duration-300 ease-in-out ${
+                          contestant.isCurrentUser
+                            ? "border-success/70 bg-accent/30 shadow-[0_0_16px_hsl(var(--success)/0.25)]"
+                            : "border-border/70 bg-panel/80"
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="border-primary/45 text-primary">#{contestant.rank}</Badge>
+                            <p className="text-sm font-semibold text-foreground">{contestant.username}</p>
+                          </div>
+                          <span className="font-mono text-base font-bold text-primary">{contestant.score.toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Streak: x{contestant.streak}</span>
+                          <span className="inline-flex items-center gap-1">
+                            <Circle className={`h-3 w-3 ${contestant.active ? "fill-success text-success" : "fill-muted text-muted-foreground"}`} />
+                            {contestant.active ? "Singing" : "Idle"}
+                          </span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </aside>
+              </div>
+            </section>
+          )}
 
           <section className="grid gap-4 px-4 pb-4 lg:grid-cols-5">
             <article className="rounded-[12px] border border-primary/35 bg-panel-soft/70 p-4 shadow-soft backdrop-blur-xl neon-edge">
