@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Circle,
   ChevronDown,
   ChevronUp,
   GripVertical,
   Disc3,
+  Flame,
   History,
   ListMusic,
   Loader2,
@@ -46,7 +48,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PitchDetector } from "pitchy";
 import { toast } from "@/hooks/use-toast";
 import { AuditLogViewer } from "@/components/AuditLogViewer";
 import {
@@ -81,8 +82,9 @@ const LYRIC_OFFSET_DEFAULT_MS = 0;
 const LYRIC_CALIBRATION_STORAGE_KEY = "voxaria.lyricCalibrationOffsetMs";
 const LYRIC_HOLD_WINDOW_MS = 3000;
 const KARAOKE_SCORE_TICK_MS = 120;
-const MIN_PITCH_CLARITY = 0.78;
 const OCTAVE_TOLERANCE_SEMITONES = 1;
+const KARAOKE_GATE_THRESHOLD_DB = -40;
+const KARAOKE_MATCH_TOLERANCE_CENTS = 45;
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 const navItems: NavItem[] = [
@@ -200,14 +202,63 @@ const queueRow = (
 
 const getLyricLineClassName = (idx: number, activeLine: number) => {
   if (idx === activeLine) {
-    return "text-primary font-bold scale-105 drop-shadow-[0_0_8px_hsl(var(--primary)/0.5)]";
+    return "text-primary font-bold scale-[1.08] drop-shadow-[0_0_16px_hsl(var(--primary)/0.6)]";
   }
 
   if (idx < activeLine) {
-    return "text-muted-foreground/50 font-medium scale-95";
+    return "text-muted-foreground/50 font-medium scale-[0.96]";
   }
 
-  return "text-muted-foreground/80 font-medium scale-95";
+  return "text-muted-foreground/80 font-medium scale-[0.96]";
+};
+
+const midiToFrequency = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
+
+const midiToNoteLabel = (midi: number) => {
+  const noteIndex = ((Math.round(midi) % 12) + 12) % 12;
+  const octave = Math.floor(Math.round(midi) / 12) - 1;
+  return `${NOTE_NAMES[noteIndex]}${octave}`;
+};
+
+const detectPitchFromAutocorrelation = (samples: Float32Array, sampleRate: number) => {
+  const size = samples.length;
+  if (size < 2) return 0;
+
+  let rms = 0;
+  for (let i = 0; i < size; i += 1) rms += samples[i] * samples[i];
+  rms = Math.sqrt(rms / size);
+  if (rms < 0.008) return 0;
+
+  const correlations = new Float32Array(size);
+  for (let lag = 0; lag < size; lag += 1) {
+    let sum = 0;
+    for (let i = 0; i < size - lag; i += 1) {
+      sum += samples[i] * samples[i + lag];
+    }
+    correlations[lag] = sum;
+  }
+
+  let bestLag = -1;
+  let bestCorrelation = 0;
+  for (let lag = 8; lag < size / 2; lag += 1) {
+    const correlation = correlations[lag];
+    if (correlation > bestCorrelation) {
+      bestCorrelation = correlation;
+      bestLag = lag;
+    }
+  }
+
+  if (bestLag <= 0) return 0;
+
+  const prev = correlations[Math.max(0, bestLag - 1)] ?? 0;
+  const next = correlations[Math.min(correlations.length - 1, bestLag + 1)] ?? 0;
+  const current = correlations[bestLag] ?? 0;
+  const denom = 2 * (2 * current - prev - next);
+  const shift = denom !== 0 ? (next - prev) / denom : 0;
+  const refinedLag = bestLag + shift;
+
+  if (!Number.isFinite(refinedLag) || refinedLag <= 0) return 0;
+  return sampleRate / refinedLag;
 };
 
 const Index = () => {
