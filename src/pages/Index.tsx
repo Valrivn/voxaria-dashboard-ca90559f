@@ -1437,6 +1437,7 @@ const Index = () => {
       canvas.width = width;
       canvas.height = height;
     }
+    const centerY = height / 2;
 
     // 1. Setup absolute MIDI range dynamically with cushion
     let minMidi = 48; // Default C3
