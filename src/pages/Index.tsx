@@ -998,6 +998,18 @@ const Index = () => {
     return nearest.midi % 12;
   }, []);
 
+  const getNearestPitchFrame = useCallback((frames: ApiPitchMap["frames"], atMs: number) => {
+    if (!frames.length) return null;
+
+    let nearest = frames[0];
+    for (let i = 1; i < frames.length; i += 1) {
+      const candidate = frames[i];
+      if (Math.abs(candidate.timeMs - atMs) < Math.abs(nearest.timeMs - atMs)) nearest = candidate;
+    }
+
+    return nearest;
+  }, []);
+
   const startKaraoke = async () => {
     if (isGeneratingKaraoke) return;
     if (!activeGuildId || !currentTrack.url) {
@@ -1116,20 +1128,35 @@ const Index = () => {
   }, [maxCombo]);
 
   useEffect(() => {
-    if (!karaokeEnabled || !analyserRef.current || !pitchDetectorRef.current || !micByteBufferRef.current) return;
+    if (!karaokeEnabled || !analyserRef.current || !micByteBufferRef.current || !micFloatBufferRef.current) return;
 
     const analyzer = analyserRef.current;
-    const detector = pitchDetectorRef.current;
     const byteBuffer = micByteBufferRef.current;
+    const floatBuffer = micFloatBufferRef.current;
 
     const detectFrame = () => {
       analyzer.getByteTimeDomainData(byteBuffer as unknown as Uint8Array<ArrayBuffer>);
-      const normalizedSamples = Array.from(byteBuffer, (sample) => (sample - 128) / 128);
-      const [pitchHz, clarity] = detector.findPitch(normalizedSamples, audioContextRef.current?.sampleRate ?? 44100);
+      analyzer.getFloatTimeDomainData(floatBuffer);
 
-      if (pitchHz > 0 && clarity >= MIN_PITCH_CLARITY) {
-        latestPitchHzRef.current = pitchHz;
-        setDetectedPitchHz(pitchHz);
+      let rms = 0;
+      for (let i = 0; i < floatBuffer.length; i += 1) rms += floatBuffer[i] * floatBuffer[i];
+      rms = Math.sqrt(rms / floatBuffer.length);
+      const db = 20 * Math.log10(Math.max(rms, 1e-8));
+      const gated = db < KARAOKE_GATE_THRESHOLD_DB;
+
+      const volumePercent = Math.min(100, Math.max(0, ((db + 80) / 80) * 100));
+      setMicVolumePercent(Number.isFinite(volumePercent) ? volumePercent : 0);
+      setIsSingingActive(!gated);
+
+      if (!gated) {
+        const pitchHz = detectPitchFromAutocorrelation(floatBuffer, audioContextRef.current?.sampleRate ?? 44100);
+        if (pitchHz > 0) {
+          latestPitchHzRef.current = pitchHz;
+          setDetectedPitchHz(pitchHz);
+        } else {
+          latestPitchHzRef.current = null;
+          setDetectedPitchHz(null);
+        }
       } else {
         latestPitchHzRef.current = null;
         setDetectedPitchHz(null);
@@ -1155,10 +1182,13 @@ const Index = () => {
 
     karaokeIntervalRef.current = window.setInterval(() => {
       const nowMs = smoothTimeRef.current;
-      const targetSemitone = getNearestPitchSemitone(currentPitchMap.frames, nowMs);
+      const targetFrame = getNearestPitchFrame(currentPitchMap.frames, nowMs);
+      const targetSemitone = targetFrame ? ((targetFrame.midi % 12) + 12) % 12 : null;
       const sungHz = latestPitchHzRef.current;
 
-      if (targetSemitone === null || !sungHz) {
+      targetNoteMidiRef.current = targetFrame?.midi ?? null;
+
+      if (!targetFrame || targetSemitone === null || !sungHz) {
         if (karaokeComboRef.current !== 0) {
           karaokeComboRef.current = 0;
           setKaraokeCombo(0);
@@ -1166,10 +1196,12 @@ const Index = () => {
         return;
       }
 
+      const sungMidi = Math.round(12 * Math.log2(sungHz / 440) + 69);
       const sungSemitone = toSemitone(sungHz);
       const delta = Math.abs(sungSemitone - targetSemitone);
       const wrappedDelta = Math.min(delta, 12 - delta);
-      const onNote = wrappedDelta <= OCTAVE_TOLERANCE_SEMITONES;
+      const centsDiff = Math.abs((sungMidi - targetFrame.midi) * 100);
+      const onNote = wrappedDelta <= OCTAVE_TOLERANCE_SEMITONES && centsDiff <= KARAOKE_MATCH_TOLERANCE_CENTS;
 
       if (onNote) {
         const nextCombo = karaokeComboRef.current + 1;
@@ -1193,7 +1225,7 @@ const Index = () => {
       if (karaokeIntervalRef.current) window.clearInterval(karaokeIntervalRef.current);
       karaokeIntervalRef.current = null;
     };
-  }, [karaokeEnabled, currentPitchMap, getNearestPitchSemitone]);
+  }, [karaokeEnabled, currentPitchMap, getNearestPitchFrame]);
 
   useEffect(() => {
     if (!karaokeEnabled || !player.data?.durationSec) return;
