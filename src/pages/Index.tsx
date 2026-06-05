@@ -220,7 +220,7 @@ const midiToNoteLabel = (midi: number) => {
   return `${NOTE_NAMES[noteIndex]}${octave}`;
 };
 
-const detectPitchFromAutocorrelation = (samples: Float32Array, sampleRate: number) => {
+const detectPitchFromAutocorrelation = (samples: ArrayLike<number>, sampleRate: number) => {
   const size = samples.length;
   if (size < 2) return 0;
 
