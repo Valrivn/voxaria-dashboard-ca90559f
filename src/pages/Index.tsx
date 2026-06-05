@@ -283,8 +283,11 @@ const Index = () => {
   const [karaokeScore, setKaraokeScore] = useState(0);
   const [karaokeCombo, setKaraokeCombo] = useState(0);
   const [maxCombo, setMaxCombo] = useState(0);
+  const [activeDashboardTab, setActiveDashboardTab] = useState<"system-controls" | "karaoke-arena">("system-controls");
   const [scoreSummaryOpen, setScoreSummaryOpen] = useState(false);
   const [detectedPitchHz, setDetectedPitchHz] = useState<number | null>(null);
+  const [micVolumePercent, setMicVolumePercent] = useState(0);
+  const [isSingingActive, setIsSingingActive] = useState(false);
   const [playlistBuilderQuery, setPlaylistBuilderQuery] = useState("");
   const [debouncedPlaylistQuery, setDebouncedPlaylistQuery] = useState("");
   const [playlistImportUrl, setPlaylistImportUrl] = useState("");
@@ -311,8 +314,9 @@ const Index = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const pitchDetectorRef = useRef<PitchDetector<number[]> | null>(null);
   const micByteBufferRef = useRef<Uint8Array | null>(null);
+  const micFloatBufferRef = useRef<Float32Array | null>(null);
+  const targetNoteMidiRef = useRef<number | null>(null);
   const latestPitchHzRef = useRef<number | null>(null);
   const backendClockRef = useRef({ positionMs: 0, receivedAt: 0, paused: true, durationMs: 0 });
   const lastClockEmitRef = useRef(0);
