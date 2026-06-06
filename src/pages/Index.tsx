@@ -1005,10 +1005,35 @@ const Index = () => {
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const hasLoginSuccess = urlParams.get('login_status') === 'success';
+    const userParam = urlParams.get('user');
 
     if (hasLoginSuccess) {
+      if (userParam) {
+        try {
+          const decodedUser = JSON.parse(decodeURIComponent(userParam));
+          if (decodedUser && decodedUser.name) {
+            setCurrentUser(decodedUser);
+            localStorage.setItem('vx_user_fallback', JSON.stringify(decodedUser));
+          }
+        } catch (e) {
+          console.error("Failed to parse fallback user from URL:", e);
+        }
+      }
       // Clean up the URL bar cleanly so the parameter disappears from view
       window.history.replaceState({}, document.title, window.location.pathname);
+    } else {
+      // Check if we have a cached fallback user in localStorage
+      const cachedUser = localStorage.getItem('vx_user_fallback');
+      if (cachedUser) {
+        try {
+          const parsed = JSON.parse(cachedUser);
+          if (parsed && parsed.name) {
+            setCurrentUser(parsed);
+          }
+        } catch (e) {
+          console.error("Failed to parse cached user:", e);
+        }
+      }
     }
 
     void fetchSession().then((success) => {
@@ -1031,6 +1056,7 @@ const Index = () => {
     } catch (err) {
       console.error("Failed to log out from backend:", err);
     }
+    localStorage.removeItem('vx_user_fallback');
     setCurrentUser(null);
     toast({ title: "Logged out", description: "Role-gated controls are now hidden." });
   };
