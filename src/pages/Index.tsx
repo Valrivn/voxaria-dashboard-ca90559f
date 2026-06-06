@@ -1526,7 +1526,14 @@ const Index = () => {
     }
     const centerY = height / 2;
 
-    // 1. Setup absolute MIDI range dynamically based on active pitchBlocks with cushion
+    // 1. Clear frame first
+    ctx.clearRect(0, 0, width, height);
+
+    // Solid dark slate background (#1e293b)
+    ctx.fillStyle = "#1e293b"; 
+    ctx.fillRect(0, 0, width, height);
+
+    // 2. Setup absolute MIDI range dynamically based on active pitchBlocks with cushion
     let minMidi = 48; // Default C3
     let maxMidi = 72; // Default C5
     const activeNotes = pitchBlocks.filter((n) => n.note > 0);
@@ -1544,15 +1551,12 @@ const Index = () => {
     const availableHeight = height - (padding * 2);
 
     const mapMidiToY = (midiNote: number) => {
-      if (maxMidi === minMidi) return centerY;
-      return padding + (1.0 - (midiNote - minMidi) / (maxMidi - minMidi)) * availableHeight;
+      const range = maxMidi - minMidi;
+      if (!range || range <= 0) return centerY;
+      return padding + (1.0 - (midiNote - minMidi) / range) * availableHeight;
     };
 
-    // Solid dark slate background (#1e293b)
-    ctx.fillStyle = "#1e293b"; 
-    ctx.fillRect(0, 0, width, height);
-
-    // 2. Draw Horizontal Semitone Grid Lines & C-Note Octave Labels
+    // 3. Draw Horizontal Semitone Grid Lines & C-Note Octave Labels
     const naturalMidiNotes = [48, 50, 52, 53, 55, 57, 59, 60, 62, 64, 65, 67, 69, 71, 72];
     for (let midi = minMidi; midi <= maxMidi; midi++) {
       const y = mapMidiToY(midi);
@@ -1617,13 +1621,16 @@ const Index = () => {
     ctx.lineTo(playheadX, height);
     ctx.stroke();
 
-    // 3. Draw Scrolling Target Note Blocks with Diagnostic Rendering Counter
+    // 4. Draw Scrolling Target Note Blocks with Diagnostic Rendering Counter
     frameCountRef.current += 1;
     let renderedNotesCount = 0;
     const activeTargetMidi = targetNoteMidiRef.current;
 
     if (pitchBlocks.length > 0) {
       pitchBlocks.forEach((block) => {
+        // Skip silent blocks
+        if (!block.note || block.note <= 0) return;
+
         const noteX = playheadX + (block.start - playbackTimeSec) * pixelsPerSecond;
         const noteWidth = block.duration * pixelsPerSecond;
 
@@ -1631,7 +1638,6 @@ const Index = () => {
         renderedNotesCount += 1;
 
         const y = mapMidiToY(block.note);
-        const blockHeight = 14;
 
         const isActive = activeTargetMidi === block.note;
         const sungHz = latestPitchHzRef.current;
@@ -1643,16 +1649,34 @@ const Index = () => {
           isHit = Math.abs(semitoneDelta) <= 0.5; 
         }
 
-        const blockColor = isHit ? "#22c55e" : "#38bdf8"; 
+        // Force a vivid neon blue fill style completely bypassing variable or alpha opacity strings
+        ctx.fillStyle = isHit ? "#22c55e" : "#38bdf8"; 
+        
+        // Protect the height property: if calculated height is faulty or zero, force it to 16 pixels
+        const noteHeight = 16;
+        const finalHeight = (noteHeight && noteHeight > 0) ? noteHeight : 16;
 
-        ctx.fillStyle = blockColor;
         ctx.strokeStyle = isHit ? "rgba(34, 197, 94, 0.4)" : "rgba(56, 189, 248, 0.3)";
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.roundRect(noteX, y - blockHeight / 2, noteWidth, blockHeight, 6);
+        ctx.roundRect(noteX, y - finalHeight / 2, noteWidth, finalHeight, 6);
         ctx.fill();
         ctx.stroke();
       });
+    }
+
+    // Log diagnostic coordinates on frame 240 for first note block
+    if (frameCountRef.current === 240 && pitchBlocks.length > 0) {
+      const activePills = pitchBlocks.filter((b) => b.note > 0);
+      if (activePills.length > 0) {
+        const first = activePills[0];
+        const noteX = playheadX + (first.start - playbackTimeSec) * pixelsPerSecond;
+        const noteY = mapMidiToY(first.note);
+        const noteWidth = first.duration * pixelsPerSecond;
+        const noteHeight = 16;
+        const finalHeight = (noteHeight && noteHeight > 0) ? noteHeight : 16;
+        console.log("📐 [FIRST NOTE REAL PIXELS]:", { x: noteX, y: noteY, w: noteWidth, h: finalHeight });
+      }
     }
 
     // Log diagnostic counter once every 60 frames
@@ -1660,7 +1684,7 @@ const Index = () => {
       console.log(`📊 [CANVAS RENDER] Frame ${frameCountRef.current}: Rendering ${renderedNotesCount} note blocks inside screen window.`);
     }
 
-    // 4. User Vocal Pitch Tracking Arrow with Easing
+    // 5. User Vocal Pitch Tracking Arrow with Easing
     const activeMidi = userPitchMidiRef.current;
     const hasAudioVocal = activeMidi !== null && micVolumePercent > 5;
     const isVocalActive = pitchBlocks.length > 0 ? activeMidi !== null : hasAudioVocal;
