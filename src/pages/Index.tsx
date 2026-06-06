@@ -1222,6 +1222,114 @@ const Index = () => {
     setKaraokeEnabled(false);
   }, []);
 
+  const handleHotReload = async () => {
+    console.log("🔄 [HOT RELOAD] Initiating forced arena session sync...");
+    
+    if (!currentTrack.title) return;
+
+    // 1. Force state parameters to temporarily drop out so hooks recognize a hard change
+    setLyricsData(null);
+    setPitchBlocks([]);
+    
+    // 2. Manually invoke existing fetch methods directly using the active playing track payload
+    try {
+      // Re-trigger the lyrics fetch call directly
+      const response = await voxariaApi.fetchLyrics(currentTrack.title, currentTrack.artist, activeGuildId);
+      const hasAnyLyrics = Boolean(response.lines.length || response.plain?.trim());
+      if (hasAnyLyrics) {
+        setLyricsData(response);
+        setLyricsUnavailable(false);
+      }
+
+      // Re-trigger the pitch canvas binary data load pass directly
+      const authHeaders = activeSessionToken ? { Authorization: `Bearer ${activeSessionToken}` } : {};
+      const trackIdParam = currentTrack.url ? `?trackId=${encodeURIComponent(currentTrack.url)}` : (currentTrack.id ? `?trackId=${encodeURIComponent(currentTrack.id)}` : "");
+      const pitchRes = await fetch(`${API_BASE_URL}/music/karaoke/pitch-data${trackIdParam}`, {
+        headers: {
+          "ngrok-skip-browser-warning": "true",
+          "x-guild-id": activeGuildId,
+          "x-user-id": activeUserDiscordId,
+          ...authHeaders,
+        },
+      });
+      const pitchData = await pitchRes.json();
+      
+      const convertToBlocks = (frames: any[]) => {
+        if (!Array.isArray(frames)) return [];
+        const validFrames = frames
+          .filter(f => f && typeof f.timeMs === "number" && typeof f.midi === "number" && f.midi > 0)
+          .sort((a, b) => a.timeMs - b.timeMs);
+
+        if (validFrames.length === 0) return [];
+
+        const groups: Array<{ note: number; start: number; duration: number }> = [];
+        let currentGroup: any[] = [validFrames[0]];
+
+        for (let i = 1; i < validFrames.length; i++) {
+          const prev = currentGroup[currentGroup.length - 1];
+          const curr = validFrames[i];
+          const timeDiff = (curr.timeMs - prev.timeMs) / 1000;
+          const pitchDiff = Math.abs(curr.midi - prev.midi);
+
+          if (timeDiff < 0.15 && pitchDiff <= 0.5) {
+            currentGroup.push(curr);
+          } else {
+            const start = currentGroup[0].timeMs / 1000;
+            const lastTime = currentGroup[currentGroup.length - 1].timeMs / 1000;
+            const duration = (lastTime - start) + 0.1;
+            const avgMidi = currentGroup.reduce((sum, f) => sum + f.midi, 0) / currentGroup.length;
+            groups.push({ start, duration, note: avgMidi });
+            currentGroup = [curr];
+          }
+        }
+
+        if (currentGroup.length > 0) {
+          const start = currentGroup[0].timeMs / 1000;
+          const lastTime = currentGroup[currentGroup.length - 1].timeMs / 1000;
+          const duration = (lastTime - start) + 0.1;
+          const avgMidi = currentGroup.reduce((sum, f) => sum + f.midi, 0) / currentGroup.length;
+          groups.push({ start, duration, note: avgMidi });
+        }
+        return groups;
+      };
+
+      if (Array.isArray(pitchData) && pitchData.length > 0) {
+        const blocks = convertToBlocks(pitchData);
+        setPitchBlocks(blocks);
+        setCurrentPitchMap({
+          title: currentTrack.title,
+          artist: currentTrack.artist,
+          frames: pitchData,
+        });
+        setCachedPitchTrackId(currentTrack.id);
+      } else if (pitchData && Array.isArray(pitchData.blocks) && pitchData.blocks.length > 0) {
+        const blocks = convertToBlocks(pitchData.blocks);
+        setPitchBlocks(blocks);
+        setCurrentPitchMap({
+          title: currentTrack.title,
+          artist: currentTrack.artist,
+          frames: pitchData.blocks,
+        });
+        setCachedPitchTrackId(currentTrack.id);
+      } else if (pitchData && Array.isArray(pitchData.frames) && pitchData.frames.length > 0) {
+        const blocks = convertToBlocks(pitchData.frames);
+        setPitchBlocks(blocks);
+        setCurrentPitchMap({
+          title: currentTrack.title,
+          artist: currentTrack.artist,
+          frames: pitchData.frames,
+        });
+        setCachedPitchTrackId(currentTrack.id);
+      }
+      
+      console.log("🚀 [HOT RELOAD] Arena synchronization complete! UI canvas updated cleanly.");
+      toast({ title: "Arena reloaded", description: "Lyrics and pitch data synchronized successfully." });
+    } catch (err) {
+      console.error("❌ [HOT RELOAD] Hard sync manual fetch pass crashed: ", err);
+      toast({ title: "Reload failed", description: "Could not synchronize arena stream.", variant: "destructive" });
+    }
+  };
+
   const detectedNoteLabel = useMemo(() => {
     if (!detectedPitchHz) return "--";
     const midi = Math.round(12 * Math.log2(detectedPitchHz / 440) + 69);
@@ -2247,8 +2355,16 @@ const Index = () => {
                   <div className="flex flex-1 flex-col gap-3 min-h-0 mb-4">
                     {/* Top 70% Synced Lyrics Scroll Panel */}
                     <div className="h-[68%] relative rounded-md border border-border/70 bg-panel/75 flex flex-col overflow-hidden">
-                      <div className="absolute right-3 top-3 z-10 rounded-md border border-border/70 bg-panel-soft/80 px-2 py-1 text-xs text-primary">
-                        Live Lyrics
+                      <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
+                        <button 
+                          onClick={handleHotReload}
+                          className="px-3 py-1.5 bg-emerald-500/20 border border-emerald-500/40 hover:bg-emerald-500/40 text-emerald-400 text-xs font-semibold rounded transition flex items-center gap-1.5"
+                        >
+                          🔄 Reload Arena Stream
+                        </button>
+                        <div className="rounded-md border border-border/70 bg-panel-soft/80 px-2 py-1 text-xs text-primary">
+                          Live Lyrics
+                        </div>
                       </div>
                       <div ref={lyricsContainerRef} className="h-full overflow-y-auto px-4 py-6">
                         <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 py-2">
