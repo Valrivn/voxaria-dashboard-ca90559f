@@ -328,6 +328,9 @@ const Index = () => {
   const lyricsRetryElapsedRef = useRef<number>(0);
   const loadedPitchTrackIdRef = useRef<string | null>(null);
   const matchingTimeMsRef = useRef<number>(0);
+  const pitchCacheRef = useRef<number[]>([]);
+  const vocalKeyOffsetRef = useRef<number>(0);
+  const validNoteDiffsRef = useRef<number[]>([]);
   const [pitchBlocks, setPitchBlocks] = useState<Array<{ note: number; start: number; duration: number }>>([]);
   const backendClockRef = useRef({ positionMs: 0, receivedAt: 0, paused: true, durationMs: 0 });
   const lastClockEmitRef = useRef(0);
@@ -645,6 +648,8 @@ const Index = () => {
     setCachedTrackId(null);
     setCachedPitchTrackId(null);
     loadedPitchTrackIdRef.current = null;
+    vocalKeyOffsetRef.current = 0;
+    validNoteDiffsRef.current = [];
   }, [currentTrackKey]);
 
   const coercePitchMap = (payload: ApiKaraokeResponse): ApiPitchMap | null => {
@@ -1416,17 +1421,46 @@ const Index = () => {
       if (!gated) {
         const pitchHz = detectPitchFromAutocorrelation(floatBuffer, audioContextRef.current?.sampleRate ?? 44100);
         if (pitchHz > 0) {
-          latestPitchHzRef.current = pitchHz;
-          setDetectedPitchHz(pitchHz);
-          const midi = 69 + 12 * Math.log2(pitchHz / 440);
+          // Pass frequency through a 5-frame rolling average buffer for vibrato protection / visual stability
+          pitchCacheRef.current.push(pitchHz);
+          if (pitchCacheRef.current.length > 5) {
+            pitchCacheRef.current.shift();
+          }
+          const smoothedHz = pitchCacheRef.current.reduce((a, b) => a + b, 0) / pitchCacheRef.current.length;
+
+          latestPitchHzRef.current = smoothedHz;
+          setDetectedPitchHz(smoothedHz);
+          const midi = 69 + 12 * Math.log2(smoothedHz / 440);
           userPitchMidiRef.current = midi;
           setUserPitchMidi(midi);
           
-          // Accumulate match duration if user pitch is within ±1.2 semitones of target
           const activeTarget = targetNoteMidiRef.current;
           if (activeTarget !== null) {
-            const diff = Math.abs(midi - activeTarget);
-            if (diff <= 1.2) {
+            // Track transposition offset on first 3 valid notes
+            if (validNoteDiffsRef.current.length < 3) {
+              const rawDiff = midi - activeTarget;
+              let normalizedDiff = rawDiff % 12;
+              if (normalizedDiff > 6) normalizedDiff -= 12;
+              if (normalizedDiff < -6) normalizedDiff += 12;
+              validNoteDiffsRef.current.push(normalizedDiff);
+              if (validNoteDiffsRef.current.length === 3) {
+                const avg = validNoteDiffsRef.current.reduce((a, b) => a + b, 0) / 3;
+                vocalKeyOffsetRef.current = Math.round(avg);
+                console.log("🔒 [TRANSPOSITION] Active key offset locked to:", vocalKeyOffsetRef.current);
+              }
+            }
+
+            // Octave-blind chroma matching math
+            const transposedTarget = activeTarget + vocalKeyOffsetRef.current;
+            const userNoteClass = ((Math.round(midi) % 12) + 12) % 12;
+            const targetNoteClass = ((Math.round(transposedTarget) % 12) + 12) % 12;
+            
+            let pitchDistance = Math.abs(userNoteClass - targetNoteClass);
+            if (pitchDistance > 6) {
+              pitchDistance = 12 - pitchDistance;
+            }
+
+            if (pitchDistance <= 1.5) {
               matchingTimeMsRef.current += 16.6;
             }
           }
@@ -1435,6 +1469,7 @@ const Index = () => {
           setDetectedPitchHz(null);
           userPitchMidiRef.current = null;
           setUserPitchMidi(null);
+          pitchCacheRef.current = [];
         }
       } else {
         latestPitchHzRef.current = null;
@@ -1799,7 +1834,7 @@ const Index = () => {
     let maxMidi = 72; // Default C5
     const activeNotes = pitchBlocks.filter((n) => n.note > 0);
     if (activeNotes.length > 0) {
-      const notes = activeNotes.map((n) => n.note);
+      const notes = activeNotes.map((n) => n.note + vocalKeyOffsetRef.current);
       minMidi = Math.min(...notes) - 2;
       maxMidi = Math.max(...notes) + 2;
       // Ensure visual height of at least 12 semitones
@@ -1898,16 +1933,23 @@ const Index = () => {
         if (noteX + noteWidth < 0 || noteX > width) return;
         renderedNotesCount += 1;
 
-        const y = mapMidiToY(block.note);
+        const transposedNote = block.note + vocalKeyOffsetRef.current;
+        const y = mapMidiToY(transposedNote);
 
         const isActive = activeTargetMidi !== null && Math.abs(block.note - activeTargetMidi) <= 0.1;
         const sungHz = latestPitchHzRef.current;
         let isHit = false;
 
         if (isActive && sungHz && sungHz > 0) {
-          const targetHz = midiToFrequency(block.note);
-          const semitoneDelta = 12 * Math.log2(sungHz / targetHz);
-          isHit = Math.abs(semitoneDelta) <= 1.2; 
+          const sungMidi = 69 + 12 * Math.log2(sungHz / 440);
+          const userNoteClass = ((Math.round(sungMidi) % 12) + 12) % 12;
+          const targetNoteClass = ((Math.round(transposedNote) % 12) + 12) % 12;
+          
+          let pitchDistance = Math.abs(userNoteClass - targetNoteClass);
+          if (pitchDistance > 6) {
+            pitchDistance = 12 - pitchDistance;
+          }
+          isHit = pitchDistance <= 1.5;
         }
 
         // Force a hot pink (#ec4899) fill style for hits or standard neon blue (#38bdf8) for miss/idle
@@ -1981,9 +2023,14 @@ const Index = () => {
     } else {
       let isMatch = false;
       if (pitchBlocks.length > 0 && activeTargetMidi !== null && activeMidi !== null) {
-        const targetHz = midiToFrequency(activeTargetMidi);
-        const targetMidi = 69 + 12 * Math.log2(targetHz / 440);
-        isMatch = Math.abs(activeMidi - targetMidi) <= 0.5; 
+        const transposedTarget = activeTargetMidi + vocalKeyOffsetRef.current;
+        const userNoteClass = ((Math.round(activeMidi) % 12) + 12) % 12;
+        const targetNoteClass = ((Math.round(transposedTarget) % 12) + 12) % 12;
+        let pitchDistance = Math.abs(userNoteClass - targetNoteClass);
+        if (pitchDistance > 6) {
+          pitchDistance = 12 - pitchDistance;
+        }
+        isMatch = pitchDistance <= 1.5; 
       }
       const arrowColor = isMatch ? "#22c55e" : "#38bdf8"; 
 
