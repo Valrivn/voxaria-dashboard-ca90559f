@@ -327,6 +327,7 @@ const Index = () => {
   const fetchPitchTimeoutRef = useRef<number | null>(null);
   const lyricsRetryElapsedRef = useRef<number>(0);
   const loadedPitchTrackIdRef = useRef<string | null>(null);
+  const matchingTimeMsRef = useRef<number>(0);
   const [pitchBlocks, setPitchBlocks] = useState<Array<{ note: number; start: number; duration: number }>>([]);
   const backendClockRef = useRef({ positionMs: 0, receivedAt: 0, paused: true, durationMs: 0 });
   const lastClockEmitRef = useRef(0);
@@ -1312,6 +1313,15 @@ const Index = () => {
           const midi = 69 + 12 * Math.log2(pitchHz / 440);
           userPitchMidiRef.current = midi;
           setUserPitchMidi(midi);
+          
+          // Accumulate match duration if user pitch is within ±1.2 semitones of target
+          const activeTarget = targetNoteMidiRef.current;
+          if (activeTarget !== null) {
+            const diff = Math.abs(midi - activeTarget);
+            if (diff <= 1.2) {
+              matchingTimeMsRef.current += 16.6;
+            }
+          }
         } else {
           latestPitchHzRef.current = null;
           setDetectedPitchHz(null);
@@ -1384,13 +1394,8 @@ const Index = () => {
         return;
       }
 
-      const targetSemitone = ((activeTargetMidi % 12) + 12) % 12;
-      const sungMidi = Math.round(12 * Math.log2(sungHz / 440) + 69);
-      const sungSemitone = toSemitone(sungHz);
-      const delta = Math.abs(sungSemitone - targetSemitone);
-      const wrappedDelta = Math.min(delta, 12 - delta);
-      const centsDiff = Math.abs((sungMidi - activeTargetMidi) * 100);
-      const onNote = wrappedDelta <= OCTAVE_TOLERANCE_SEMITONES && centsDiff <= KARAOKE_MATCH_TOLERANCE_CENTS;
+      const onNote = matchingTimeMsRef.current >= 10;
+      matchingTimeMsRef.current = 0;
 
       if (onNote) {
         const nextCombo = karaokeComboRef.current + 1;
@@ -1459,14 +1464,59 @@ const Index = () => {
       // Guard check again in case mode changed during network request
       if (!karaokeEnabled) return;
 
-      // Helper to convert timeMs/midi frames to start/duration blocks (100ms window size)
+      // Helper to convert timeMs/midi frames and consolidate into continuous blocks
       const convertToBlocks = (frames: any[]) => {
         if (!Array.isArray(frames)) return [];
-        return frames.map((f: any) => ({
-          start: (f.timeMs ?? 0) / 1000,
-          duration: 0.1, // Fixed window size (100ms)
-          note: f.midi ?? 0
-        })).filter(b => b.note > 0);
+        
+        // Filter out zero/null notes first and sort by timeMs ascending
+        const validFrames = frames
+          .filter(f => f && typeof f.timeMs === "number" && typeof f.midi === "number" && f.midi > 0)
+          .sort((a, b) => a.timeMs - b.timeMs);
+
+        if (validFrames.length === 0) return [];
+
+        const groups: Array<{ note: number; start: number; duration: number }> = [];
+        let currentGroup: any[] = [validFrames[0]];
+
+        for (let i = 1; i < validFrames.length; i++) {
+          const prev = currentGroup[currentGroup.length - 1];
+          const curr = validFrames[i];
+          
+          const timeDiff = (curr.timeMs - prev.timeMs) / 1000;
+          const pitchDiff = Math.abs(curr.midi - prev.midi);
+
+          if (timeDiff < 0.15 && pitchDiff <= 0.5) {
+            currentGroup.push(curr);
+          } else {
+            // Commit current group
+            const start = currentGroup[0].timeMs / 1000;
+            const lastTime = currentGroup[currentGroup.length - 1].timeMs / 1000;
+            const duration = (lastTime - start) + 0.1; // 100ms minimum block duration
+            const avgMidi = currentGroup.reduce((sum, f) => sum + f.midi, 0) / currentGroup.length;
+            groups.push({
+              start,
+              duration,
+              note: avgMidi
+            });
+            // Start new group
+            currentGroup = [curr];
+          }
+        }
+
+        // Commit last group
+        if (currentGroup.length > 0) {
+          const start = currentGroup[0].timeMs / 1000;
+          const lastTime = currentGroup[currentGroup.length - 1].timeMs / 1000;
+          const duration = (lastTime - start) + 0.1;
+          const avgMidi = currentGroup.reduce((sum, f) => sum + f.midi, 0) / currentGroup.length;
+          groups.push({
+            start,
+            duration,
+            note: avgMidi
+          });
+        }
+
+        return groups;
       };
 
       if (Array.isArray(data) && data.length > 0) {
@@ -1742,24 +1792,24 @@ const Index = () => {
 
         const y = mapMidiToY(block.note);
 
-        const isActive = activeTargetMidi === block.note;
+        const isActive = activeTargetMidi !== null && Math.abs(block.note - activeTargetMidi) <= 0.1;
         const sungHz = latestPitchHzRef.current;
         let isHit = false;
 
         if (isActive && sungHz && sungHz > 0) {
-          const targetHz = midiToFrequency(activeTargetMidi);
+          const targetHz = midiToFrequency(block.note);
           const semitoneDelta = 12 * Math.log2(sungHz / targetHz);
-          isHit = Math.abs(semitoneDelta) <= 0.5; 
+          isHit = Math.abs(semitoneDelta) <= 1.2; 
         }
 
-        // Force a vivid neon blue fill style completely bypassing variable or alpha opacity strings
-        ctx.fillStyle = isHit ? "#22c55e" : "#38bdf8"; 
+        // Force a hot pink (#ec4899) fill style for hits or standard neon blue (#38bdf8) for miss/idle
+        ctx.fillStyle = isHit ? "#ec4899" : "#38bdf8"; 
         
         // Protect the height property: if calculated height is faulty or zero, force it to 16 pixels
         const noteHeight = 16;
         const finalHeight = (noteHeight && noteHeight > 0) ? noteHeight : 16;
 
-        ctx.strokeStyle = isHit ? "rgba(34, 197, 94, 0.4)" : "rgba(56, 189, 248, 0.3)";
+        ctx.strokeStyle = isHit ? "rgba(236, 72, 153, 0.4)" : "rgba(56, 189, 248, 0.3)";
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.roundRect(noteX, y - finalHeight / 2, noteWidth, finalHeight, 6);
