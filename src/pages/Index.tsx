@@ -601,12 +601,22 @@ const Index = () => {
   });
 
   const currentTrack = useMemo(
-    () => ({
-      title: (player.data?.cleanedTitle ?? player.data?.title ?? "").trim(),
-      artist: (player.data?.cleanedArtist ?? player.data?.artist ?? "").trim(),
-      url: (player.data?.trackUrl ?? player.data?.url ?? player.data?.uri ?? "").trim(),
-      id: (player.data?.id ?? player.data?.identifier ?? "").trim(),
-    }),
+    () => {
+      const rawId = (player.data?.id ?? player.data?.identifier ?? "").trim();
+      const cleanTitle = (player.data?.cleanedTitle ?? player.data?.title ?? "").trim();
+      const cleanArtist = (player.data?.cleanedArtist ?? player.data?.artist ?? "").trim();
+      
+      // Fallback: If no track ID is accessible (or evaluates to 'undefined'), generate a sanitized slug
+      const fallbackId = `${cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, "_")}_${cleanArtist.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+      const finalId = (rawId && rawId !== "undefined") ? rawId : fallbackId;
+
+      return {
+        title: cleanTitle,
+        artist: cleanArtist,
+        url: (player.data?.trackUrl ?? player.data?.url ?? player.data?.uri ?? "").trim(),
+        id: finalId,
+      };
+    },
     [player.data?.cleanedTitle, player.data?.title, player.data?.cleanedArtist, player.data?.artist, player.data?.trackUrl, player.data?.url, player.data?.uri, player.data?.id, player.data?.identifier],
   );
 
