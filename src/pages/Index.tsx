@@ -298,6 +298,8 @@ const Index = () => {
   const [currentPitchMap, setCurrentPitchMap] = useState<ApiPitchMap | null>(null);
   const [interpolatedPositionMs, setInterpolatedPositionMs] = useState(0);
   const [currentPlaybackTimeSec, setCurrentPlaybackTimeSec] = useState(0);
+  const [cachedTrackId, setCachedTrackId] = useState<string | null>(null);
+  const [cachedPitchTrackId, setCachedPitchTrackId] = useState<string | null>(null);
 
   const animationFrameRef = useRef<number | null>(null);
   const karaokeAnimationRef = useRef<number | null>(null);
@@ -324,6 +326,7 @@ const Index = () => {
   const lyricsRetryTimerRef = useRef<number | null>(null);
   const fetchPitchTimeoutRef = useRef<number | null>(null);
   const lyricsRetryElapsedRef = useRef<number>(0);
+  const loadedPitchTrackIdRef = useRef<string | null>(null);
   const [pitchBlocks, setPitchBlocks] = useState<Array<{ note: number; start: number; duration: number }>>([]);
   const backendClockRef = useRef({ positionMs: 0, receivedAt: 0, paused: true, durationMs: 0 });
   const lastClockEmitRef = useRef(0);
@@ -638,6 +641,9 @@ const Index = () => {
     setLyricsUnavailable(false);
     setActiveLine(0);
     setCurrentPitchMap(null);
+    setCachedTrackId(null);
+    setCachedPitchTrackId(null);
+    loadedPitchTrackIdRef.current = null;
   }, [currentTrackKey]);
 
   const coercePitchMap = (payload: ApiKaraokeResponse): ApiPitchMap | null => {
@@ -1465,17 +1471,21 @@ const Index = () => {
 
       if (Array.isArray(data) && data.length > 0) {
         const blocks = convertToBlocks(data);
-        setPitchBlocks(blocks);
-        // Also update currentPitchMap so the "Pitch Map: Ready" indicator shows and MIDI scoring works
-        setCurrentPitchMap({
-          title: currentTrack.title,
-          artist: currentTrack.artist,
-          frames: data,
-        });
+        if (cachedPitchTrackId !== currentTrack.id) {
+          setPitchBlocks(blocks);
+          // Also update currentPitchMap so the "Pitch Map: Ready" indicator shows and MIDI scoring works
+          setCurrentPitchMap({
+            title: currentTrack.title,
+            artist: currentTrack.artist,
+            frames: data,
+          });
+          setCachedPitchTrackId(currentTrack.id);
+        }
         console.log("Loaded snapped pitch blocks (raw array):", blocks.length);
         // Toast only once when the map transitions from unavailable → available
-        if (!currentPitchMap) {
+        if (loadedPitchTrackIdRef.current !== currentTrack.id) {
           toast({ title: "Pitch map ready", description: "Karaoke pitch tracking is now active." });
+          loadedPitchTrackIdRef.current = currentTrack.id;
         }
       } else if (data && data.status === "processing") {
         setPitchBlocks([]);
@@ -1485,22 +1495,36 @@ const Index = () => {
         }, 3000);
       } else if (data && Array.isArray(data.blocks) && data.blocks.length > 0) {
         const blocks = convertToBlocks(data.blocks);
-        setPitchBlocks(blocks);
-        setCurrentPitchMap({
-          title: currentTrack.title,
-          artist: currentTrack.artist,
-          frames: data.blocks,
-        });
+        if (cachedPitchTrackId !== currentTrack.id) {
+          setPitchBlocks(blocks);
+          setCurrentPitchMap({
+            title: currentTrack.title,
+            artist: currentTrack.artist,
+            frames: data.blocks,
+          });
+          setCachedPitchTrackId(currentTrack.id);
+        }
         console.log("Loaded snapped pitch blocks (wrapped):", blocks.length);
+        if (loadedPitchTrackIdRef.current !== currentTrack.id) {
+          toast({ title: "Pitch map ready", description: "Karaoke pitch tracking is now active." });
+          loadedPitchTrackIdRef.current = currentTrack.id;
+        }
       } else if (data && Array.isArray(data.frames) && data.frames.length > 0) {
         const blocks = convertToBlocks(data.frames);
-        setPitchBlocks(blocks);
-        setCurrentPitchMap({
-          title: currentTrack.title,
-          artist: currentTrack.artist,
-          frames: data.frames,
-        });
+        if (cachedPitchTrackId !== currentTrack.id) {
+          setPitchBlocks(blocks);
+          setCurrentPitchMap({
+            title: currentTrack.title,
+            artist: currentTrack.artist,
+            frames: data.frames,
+          });
+          setCachedPitchTrackId(currentTrack.id);
+        }
         console.log("Loaded snapped pitch blocks (frames list):", blocks.length);
+        if (loadedPitchTrackIdRef.current !== currentTrack.id) {
+          toast({ title: "Pitch map ready", description: "Karaoke pitch tracking is now active." });
+          loadedPitchTrackIdRef.current = currentTrack.id;
+        }
       } else {
         setPitchBlocks([]);
       }
@@ -1513,7 +1537,7 @@ const Index = () => {
         }, 5000);
       }
     }
-  }, [API_BASE_URL, activeGuildId, activeUserDiscordId, activeSessionToken, currentTrack.title, currentTrack.id, karaokeEnabled, currentPitchMap]);
+  }, [API_BASE_URL, activeGuildId, activeUserDiscordId, activeSessionToken, currentTrack.title, currentTrack.id, karaokeEnabled, cachedPitchTrackId]);
 
   const startLyricsAutoFetchLoop = useCallback(() => {
     if (lyricsRetryTimerRef.current) {
@@ -1527,7 +1551,10 @@ const Index = () => {
         const response = await voxariaApi.fetchLyrics(currentTrack.title, currentTrack.artist, activeGuildId);
         const hasAnyLyrics = Boolean(response.lines.length || response.plain?.trim());
         if (hasAnyLyrics) {
-          setLyricsData(response);
+          if (cachedTrackId !== currentTrack.id) {
+            setLyricsData(response);
+            setCachedTrackId(currentTrack.id);
+          }
           setLyricsUnavailable(false);
           if (response.hasSynced) {
             if (lyricsRetryTimerRef.current) {
@@ -1553,7 +1580,10 @@ const Index = () => {
 
     void poll();
     lyricsRetryTimerRef.current = window.setInterval(poll, 10000);
-  }, [currentTrack.title, currentTrack.artist, activeGuildId]);
+  }, [currentTrack.title, currentTrack.artist, currentTrack.id, activeGuildId, cachedTrackId]);
+
+  const currentTrackId = currentTrack.id;
+  const playerPlaying = player.data?.playing;
 
   useEffect(() => {
     if (!karaokeEnabled) {
@@ -1570,7 +1600,7 @@ const Index = () => {
         fetchPitchTimeoutRef.current = null;
       }
     };
-  }, [currentTrackKey, fetchPitchData, karaokeEnabled, startLyricsAutoFetchLoop]);
+  }, [currentTrackId, playerPlaying, karaokeEnabled]);
 
   // Update target MIDI note from blocks
   useEffect(() => {
