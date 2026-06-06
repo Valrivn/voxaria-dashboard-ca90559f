@@ -1453,15 +1453,26 @@ const Index = () => {
       // Guard check again in case mode changed during network request
       if (!karaokeEnabled) return;
 
+      // Helper to convert timeMs/midi frames to start/duration blocks (100ms window size)
+      const convertToBlocks = (frames: any[]) => {
+        if (!Array.isArray(frames)) return [];
+        return frames.map((f: any) => ({
+          start: (f.timeMs ?? 0) / 1000,
+          duration: 0.1, // Fixed window size (100ms)
+          note: f.midi ?? 0
+        })).filter(b => b.note > 0);
+      };
+
       if (Array.isArray(data) && data.length > 0) {
-        setPitchBlocks(data);
+        const blocks = convertToBlocks(data);
+        setPitchBlocks(blocks);
         // Also update currentPitchMap so the "Pitch Map: Ready" indicator shows and MIDI scoring works
         setCurrentPitchMap({
           title: currentTrack.title,
           artist: currentTrack.artist,
           frames: data,
         });
-        console.log("Loaded snapped pitch blocks (raw array):", data.length);
+        console.log("Loaded snapped pitch blocks (raw array):", blocks.length);
         // Toast only once when the map transitions from unavailable → available
         if (!currentPitchMap) {
           toast({ title: "Pitch map ready", description: "Karaoke pitch tracking is now active." });
@@ -1473,13 +1484,23 @@ const Index = () => {
           void fetchPitchData();
         }, 3000);
       } else if (data && Array.isArray(data.blocks) && data.blocks.length > 0) {
-        setPitchBlocks(data.blocks);
+        const blocks = convertToBlocks(data.blocks);
+        setPitchBlocks(blocks);
         setCurrentPitchMap({
           title: currentTrack.title,
           artist: currentTrack.artist,
           frames: data.blocks,
         });
-        console.log("Loaded snapped pitch blocks (wrapped):", data.blocks.length);
+        console.log("Loaded snapped pitch blocks (wrapped):", blocks.length);
+      } else if (data && Array.isArray(data.frames) && data.frames.length > 0) {
+        const blocks = convertToBlocks(data.frames);
+        setPitchBlocks(blocks);
+        setCurrentPitchMap({
+          title: currentTrack.title,
+          artist: currentTrack.artist,
+          frames: data.frames,
+        });
+        console.log("Loaded snapped pitch blocks (frames list):", blocks.length);
       } else {
         setPitchBlocks([]);
       }
@@ -1492,7 +1513,7 @@ const Index = () => {
         }, 5000);
       }
     }
-  }, [API_BASE_URL, activeGuildId, activeUserDiscordId, activeSessionToken, currentTrack.title, currentTrack.id, karaokeEnabled]);
+  }, [API_BASE_URL, activeGuildId, activeUserDiscordId, activeSessionToken, currentTrack.title, currentTrack.id, karaokeEnabled, currentPitchMap]);
 
   const startLyricsAutoFetchLoop = useCallback(() => {
     if (lyricsRetryTimerRef.current) {
