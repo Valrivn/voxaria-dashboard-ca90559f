@@ -984,25 +984,53 @@ const Index = () => {
     window.location.href = `${API_BASE_URL}/auth/discord`;
   };
 
-  // Check auth session on app mount
-  useEffect(() => {
-    const fetchSession = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/auth/session`, {
-          headers: { "ngrok-skip-browser-warning": "true" }
-        });
-        const data = await response.json();
-        if (data && data.success && data.loggedInUser) {
-          setCurrentUser(data.loggedInUser);
-        }
-      } catch (err) {
-        console.error("Failed to restore OAuth2 session:", err);
+  const fetchSession = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/session`, {
+        headers: { "ngrok-skip-browser-warning": "true" },
+        credentials: "include"
+      });
+      const data = await response.json();
+      if (data && data.success && data.loggedInUser) {
+        setCurrentUser(data.loggedInUser);
+        return true;
       }
-    };
-    void fetchSession();
+    } catch (err) {
+      console.error("Failed to restore OAuth2 session:", err);
+    }
+    return false;
   }, [API_BASE_URL]);
 
-  const logoutDiscord = () => {
+  // Check auth session on app mount and handle redirect URL success flag
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const hasLoginSuccess = urlParams.get('login_status') === 'success';
+
+    if (hasLoginSuccess) {
+      // Clean up the URL bar cleanly so the parameter disappears from view
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    void fetchSession().then((success) => {
+      if (hasLoginSuccess && success) {
+        toast({
+          title: "Welcome back!",
+          description: "Successfully authenticated with Discord.",
+        });
+      }
+    });
+  }, [fetchSession, toast]);
+
+  const logoutDiscord = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: "POST",
+        headers: { "ngrok-skip-browser-warning": "true" },
+        credentials: "include"
+      });
+    } catch (err) {
+      console.error("Failed to log out from backend:", err);
+    }
     setCurrentUser(null);
     toast({ title: "Logged out", description: "Role-gated controls are now hidden." });
   };

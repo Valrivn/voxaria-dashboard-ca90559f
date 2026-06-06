@@ -238,6 +238,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
     const response = await fetch(`${BASE_URL}${path}`, {
       ...init,
+      credentials: "include",
       headers: {
         ...defaultHeaders,
         ...Object.fromEntries(extraHeaders.entries()),
@@ -501,6 +502,7 @@ async function postJson<TResponse, TBody extends Record<string, unknown>>(
 
     const response = await fetch(`${BASE_URL}${path}`, {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         "ngrok-skip-browser-warning": "true",
