@@ -991,16 +991,31 @@ const Index = () => {
         headers: { "ngrok-skip-browser-warning": "true" },
         credentials: "include"
       });
+      // 401 is expected when no session exists — silently ignore it
+      if (!response.ok) return false;
       const data = await response.json();
       if (data && data.success && data.loggedInUser) {
         setCurrentUser(data.loggedInUser);
         return true;
       }
+      // Also handle the standard { user: {...} } format returned by the backend
+      if (data && data.user) {
+        setCurrentUser({
+          id: data.user.id,
+          name: data.user.username ?? data.user.global_name ?? data.user.id,
+          discordId: data.user.id,
+          sessionToken: undefined,
+          avatar: data.user.avatar,
+          role: data.user.role ?? 0,
+        });
+        return true;
+      }
     } catch (err) {
-      console.error("Failed to restore OAuth2 session:", err);
+      // Network errors are expected when backend is offline
     }
     return false;
   }, [API_BASE_URL]);
+
 
   // Check auth session on app mount and handle redirect URL success flag
   useEffect(() => {
@@ -1100,10 +1115,19 @@ const Index = () => {
     setIsGeneratingKaraoke(true);
     try {
       const karaokePayload = await voxariaApi.startKaraoke(activeGuildId, currentTrack.url);
-      const nextPitchMap = coercePitchMap(karaokePayload);
-      if (!nextPitchMap) throw new Error("Pitch map unavailable");
 
-      setCurrentPitchMap(nextPitchMap);
+      // Check if the backend returned a 'processing' status (stem separation in progress)
+      const isProcessing = (karaokePayload as { status?: string }).status === "processing";
+      const nextPitchMap = coercePitchMap(karaokePayload);
+
+      // If stems are not ready yet, start karaoke optimistically — fetchPitchData will poll
+      if (!nextPitchMap && !isProcessing) {
+        throw new Error("Pitch map unavailable");
+      }
+
+      if (nextPitchMap) {
+        setCurrentPitchMap(nextPitchMap);
+      }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const audioContext = new AudioContext();
@@ -1141,7 +1165,15 @@ const Index = () => {
       karaokeMaxComboRef.current = 0;
       karaokeStartTimeRef.current = Date.now();
       setScoreSummaryOpen(false);
-      toast({ title: "Karaoke ready", description: "Pitch map generated and karaoke mode started." });
+
+      if (isProcessing) {
+        toast({
+          title: "Karaoke processing…",
+          description: "Stem separation is running. Pitch map will appear shortly — sing along once it loads!",
+        });
+      } else {
+        toast({ title: "Karaoke ready", description: "Pitch map generated and karaoke mode started." });
+      }
     } catch (error) {
       console.error("Start karaoke failed:", error);
       toast({ title: "Karaoke failed", description: "Could not generate karaoke pitch map.", variant: "destructive" });
@@ -1149,6 +1181,7 @@ const Index = () => {
       setIsGeneratingKaraoke(false);
     }
   };
+
 
   const stopKaraoke = useCallback(() => {
     if (karaokeAnimationRef.current) cancelAnimationFrame(karaokeAnimationRef.current);
@@ -1402,7 +1435,8 @@ const Index = () => {
       }
 
       const authHeaders = activeSessionToken ? { Authorization: `Bearer ${activeSessionToken}` } : {};
-      const trackIdParam = currentTrack.id ? `?trackId=${encodeURIComponent(currentTrack.id)}` : "";
+      // Use the track URL as the identifier since the backend keys pitch maps by URL hash
+      const trackIdParam = currentTrack.url ? `?trackId=${encodeURIComponent(currentTrack.url)}` : (currentTrack.id ? `?trackId=${encodeURIComponent(currentTrack.id)}` : "");
       const response = await fetch(`${API_BASE_URL}/music/karaoke/pitch-data${trackIdParam}`, {
         headers: {
           "ngrok-skip-browser-warning": "true",
@@ -1416,17 +1450,32 @@ const Index = () => {
       // Guard check again in case mode changed during network request
       if (!karaokeEnabled) return;
 
-      if (Array.isArray(data)) {
+      if (Array.isArray(data) && data.length > 0) {
         setPitchBlocks(data);
+        // Also update currentPitchMap so the "Pitch Map: Ready" indicator shows and MIDI scoring works
+        setCurrentPitchMap({
+          title: currentTrack.title,
+          artist: currentTrack.artist,
+          frames: data,
+        });
         console.log("Loaded snapped pitch blocks (raw array):", data.length);
+        // Toast only once when the map transitions from unavailable → available
+        if (!currentPitchMap) {
+          toast({ title: "Pitch map ready", description: "Karaoke pitch tracking is now active." });
+        }
       } else if (data && data.status === "processing") {
         setPitchBlocks([]);
         console.log("Pitch data is processing, scheduling retry...");
         fetchPitchTimeoutRef.current = window.setTimeout(() => {
           void fetchPitchData();
         }, 3000);
-      } else if (data && Array.isArray(data.blocks)) {
+      } else if (data && Array.isArray(data.blocks) && data.blocks.length > 0) {
         setPitchBlocks(data.blocks);
+        setCurrentPitchMap({
+          title: currentTrack.title,
+          artist: currentTrack.artist,
+          frames: data.blocks,
+        });
         console.log("Loaded snapped pitch blocks (wrapped):", data.blocks.length);
       } else {
         setPitchBlocks([]);
