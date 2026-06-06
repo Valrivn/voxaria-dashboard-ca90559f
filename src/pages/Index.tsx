@@ -327,6 +327,7 @@ const Index = () => {
   const [pitchBlocks, setPitchBlocks] = useState<Array<{ note: number; start: number; duration: number }>>([]);
   const backendClockRef = useRef({ positionMs: 0, receivedAt: 0, paused: true, durationMs: 0 });
   const lastClockEmitRef = useRef(0);
+  const frameCountRef = useRef(0);
 
   const [sessionUsers, setSessionUsers] = useState<SessionUser[]>([]);
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
@@ -1525,11 +1526,12 @@ const Index = () => {
     }
     const centerY = height / 2;
 
-    // 1. Setup absolute MIDI range dynamically with cushion
+    // 1. Setup absolute MIDI range dynamically based on active pitchBlocks with cushion
     let minMidi = 48; // Default C3
     let maxMidi = 72; // Default C5
-    if (pitchBlocks.length > 0) {
-      const notes = pitchBlocks.map((b) => b.note);
+    const activeNotes = pitchBlocks.filter((n) => n.note > 0);
+    if (activeNotes.length > 0) {
+      const notes = activeNotes.map((n) => n.note);
       minMidi = Math.min(...notes) - 2;
       maxMidi = Math.max(...notes) + 2;
       // Ensure visual height of at least 12 semitones
@@ -1538,9 +1540,12 @@ const Index = () => {
       }
     }
 
+    const padding = 20;
+    const availableHeight = height - (padding * 2);
+
     const mapMidiToY = (midiNote: number) => {
-      const padding = 20;
-      return padding + (1.0 - (midiNote - minMidi) / (maxMidi - minMidi)) * (height - 2 * padding);
+      if (maxMidi === minMidi) return centerY;
+      return padding + (1.0 - (midiNote - minMidi) / (maxMidi - minMidi)) * availableHeight;
     };
 
     // Solid dark slate background (#1e293b)
@@ -1548,19 +1553,16 @@ const Index = () => {
     ctx.fillRect(0, 0, width, height);
 
     // 2. Draw Horizontal Semitone Grid Lines & C-Note Octave Labels
-    // Absolute Scale Override: If empty, draw all natural semitones of C Major scale (C, D, E, F, G, A, B)
     const naturalMidiNotes = [48, 50, 52, 53, 55, 57, 59, 60, 62, 64, 65, 67, 69, 71, 72];
     for (let midi = minMidi; midi <= maxMidi; midi++) {
       const y = mapMidiToY(midi);
       const isC = midi % 12 === 0;
 
       if (pitchBlocks.length === 0) {
-        // Only draw lines if they are part of natural C Major semitones
         if (!naturalMidiNotes.includes(midi)) continue;
       }
 
       if (isC) {
-        // Brighter structural reference line for C-notes
         ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
         ctx.lineWidth = 1.5;
         ctx.beginPath();
@@ -1568,17 +1570,14 @@ const Index = () => {
         ctx.lineTo(width, y);
         ctx.stroke();
 
-        // Calculate scientific pitch label (e.g. C3, C4, C5)
         const octave = Math.floor(midi / 12) - 1;
         const label = `C${octave}`;
 
-        // Print text label cleanly on the far left edge of screen
         ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
         ctx.font = "bold 11px sans-serif";
         ctx.textBaseline = "middle";
         ctx.fillText(label, 8, y);
       } else {
-        // Intermediary faint tracks
         ctx.strokeStyle = "rgba(255, 255, 255, 0.03)";
         ctx.lineWidth = 1.0;
         ctx.beginPath();
@@ -1598,39 +1597,42 @@ const Index = () => {
       ctx.moveTo(0, middleCY);
       ctx.lineTo(width, middleCY);
       ctx.stroke();
-      ctx.setLineDash([]); // Reset line dash
+      ctx.setLineDash([]); 
 
-      // Print C4 helper label on central horizon
       ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
       ctx.font = "bold 10px sans-serif";
       ctx.fillText("C4 Horizon", width - 80, middleCY - 8);
     }
 
-    const xTimeBar = width * 0.25;
+    // Horizontal Scroll Physics: Playhead line anchored at 25% of canvas width
+    const playbackTimeSec = currentPlaybackTimeSec; 
+    const pixelsPerSecond = 140; 
+    const playheadX = width * 0.25;
 
-    // Draw Vertical Playhead Line (locked anchor at 25%)
+    // Draw Vertical Playhead Line
     ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(xTimeBar, 0);
-    ctx.lineTo(xTimeBar, height);
+    ctx.moveTo(playheadX, 0);
+    ctx.lineTo(playheadX, height);
     ctx.stroke();
 
-    // 3. Draw Scrolling Target Note Blocks (Horizontal translation)
+    // 3. Draw Scrolling Target Note Blocks with Diagnostic Rendering Counter
+    frameCountRef.current += 1;
+    let renderedNotesCount = 0;
     const activeTargetMidi = targetNoteMidiRef.current;
+
     if (pitchBlocks.length > 0) {
       pitchBlocks.forEach((block) => {
-        // Horizontal scroll physics: X relative to Playhead at 25% width
-        const x = xTimeBar + (block.start - currentPlaybackTimeSec) * 140;
-        const w = block.duration * 140;
+        const noteX = playheadX + (block.start - playbackTimeSec) * pixelsPerSecond;
+        const noteWidth = block.duration * pixelsPerSecond;
 
-        if (x + w < 0 || x > width) return;
+        if (noteX + noteWidth < 0 || noteX > width) return;
+        renderedNotesCount += 1;
 
-        // Absolute Y position mapped directly from note
         const y = mapMidiToY(block.note);
         const blockHeight = 14;
 
-        // Color coding: success green if active note matches pitch, soft neon blue otherwise
         const isActive = activeTargetMidi === block.note;
         const sungHz = latestPitchHzRef.current;
         let isHit = false;
@@ -1638,25 +1640,28 @@ const Index = () => {
         if (isActive && sungHz && sungHz > 0) {
           const targetHz = midiToFrequency(activeTargetMidi);
           const semitoneDelta = 12 * Math.log2(sungHz / targetHz);
-          isHit = Math.abs(semitoneDelta) <= 0.5; // +/- 0.5 semitones match
+          isHit = Math.abs(semitoneDelta) <= 0.5; 
         }
 
-        const blockColor = isHit ? "#22c55e" : "#38bdf8"; // Success green vs Neon blue unplayed
+        const blockColor = isHit ? "#22c55e" : "#38bdf8"; 
 
-        // Draw note block capsules
         ctx.fillStyle = blockColor;
         ctx.strokeStyle = isHit ? "rgba(34, 197, 94, 0.4)" : "rgba(56, 189, 248, 0.3)";
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.roundRect(x, y - blockHeight / 2, w, blockHeight, 6);
+        ctx.roundRect(noteX, y - blockHeight / 2, noteWidth, blockHeight, 6);
         ctx.fill();
         ctx.stroke();
       });
     }
 
+    // Log diagnostic counter once every 60 frames
+    if (frameCountRef.current % 60 === 0) {
+      console.log(`📊 [CANVAS RENDER] Frame ${frameCountRef.current}: Rendering ${renderedNotesCount} note blocks inside screen window.`);
+    }
+
     // 4. User Vocal Pitch Tracking Arrow with Easing
     const activeMidi = userPitchMidiRef.current;
-    // Unhide Tracker Arrow: If pitchBlocks is empty, arrow should still live-morph if volume > 5%
     const hasAudioVocal = activeMidi !== null && micVolumePercent > 5;
     const isVocalActive = pitchBlocks.length > 0 ? activeMidi !== null : hasAudioVocal;
 
@@ -1667,8 +1672,7 @@ const Index = () => {
       targetMidiY = centerY;
     }
 
-    // Easing using time-independent spring-damper math
-    const dtComp = Math.max(0.001, Math.min(0.1, dt)); // bound dt to prevent huge jumps
+    const dtComp = Math.max(0.001, Math.min(0.1, dt)); 
     if (cursorYRef.current === null) {
       cursorYRef.current = targetMidiY;
     } else {
@@ -1678,13 +1682,11 @@ const Index = () => {
     const arrowY = Math.max(10, Math.min(height - 10, cursorYRef.current));
 
     if (!isVocalActive) {
-      // Standby state: red dot dead in the middle
-      ctx.fillStyle = "#ff3366"; // Lovable theme danger red
+      ctx.fillStyle = "#ff3366"; 
       ctx.beginPath();
-      ctx.arc(xTimeBar, arrowY, 6, 0, Math.PI * 2);
+      ctx.arc(playheadX, arrowY, 6, 0, Math.PI * 2);
       ctx.fill();
 
-      // Faint glow
       ctx.shadowBlur = 8;
       ctx.shadowColor = "#ff3366";
       ctx.strokeStyle = "#ff3366";
@@ -1692,20 +1694,19 @@ const Index = () => {
       ctx.stroke();
       ctx.shadowBlur = 0;
     } else {
-      // Singing active: glowing blue tracker arrowhead pointing right on Playhead line
       let isMatch = false;
       if (pitchBlocks.length > 0 && activeTargetMidi !== null && activeMidi !== null) {
         const targetHz = midiToFrequency(activeTargetMidi);
         const targetMidi = 69 + 12 * Math.log2(targetHz / 440);
-        isMatch = Math.abs(activeMidi - targetMidi) <= 0.5; // +/- 0.5 semitones match
+        isMatch = Math.abs(activeMidi - targetMidi) <= 0.5; 
       }
-      const arrowColor = isMatch ? "#22c55e" : "#38bdf8"; // Success green vs Glowing blue
+      const arrowColor = isMatch ? "#22c55e" : "#38bdf8"; 
 
       ctx.fillStyle = arrowColor;
       ctx.beginPath();
-      ctx.moveTo(xTimeBar + 8, arrowY); // Tip pointing right
-      ctx.lineTo(xTimeBar - 8, arrowY - 6); // Top-left
-      ctx.lineTo(xTimeBar - 8, arrowY + 6); // Bottom-left
+      ctx.moveTo(playheadX + 8, arrowY); 
+      ctx.lineTo(playheadX - 8, arrowY - 6); 
+      ctx.lineTo(playheadX - 8, arrowY + 6); 
       ctx.closePath();
       ctx.fill();
 
