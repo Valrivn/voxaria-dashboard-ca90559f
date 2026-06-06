@@ -1155,6 +1155,7 @@ const Index = () => {
 
       setKaraokeEnabled(true);
       void fetchPitchData();
+      void refreshLyrics();
       setKaraokeScore(0);
       setKaraokeCombo(0);
       setMaxCombo(0);
@@ -1165,7 +1166,7 @@ const Index = () => {
       karaokeMaxComboRef.current = 0;
       karaokeStartTimeRef.current = Date.now();
       setScoreSummaryOpen(false);
-
+ 
       if (isProcessing) {
         toast({
           title: "Karaoke processing…",
@@ -1387,13 +1388,15 @@ const Index = () => {
 
       if (onNote) {
         const nextCombo = karaokeComboRef.current + 1;
-        const gain = 100 + nextCombo * 8;
+        // Boosted scoring: Interval is 120ms, so 100 points/second ≈ 12 points per interval tick
+        const extraPointsPerTick = Math.round(100 * (KARAOKE_SCORE_TICK_MS / 1000));
+        const gain = 100 + nextCombo * 8 + extraPointsPerTick;
         const nextScore = karaokeScoreRef.current + gain;
-
+ 
         karaokeComboRef.current = nextCombo;
         karaokeScoreRef.current = nextScore;
         karaokeMaxComboRef.current = Math.max(karaokeMaxComboRef.current, nextCombo);
-
+ 
         setKaraokeCombo(nextCombo);
         setKaraokeScore(nextScore);
         setMaxCombo(karaokeMaxComboRef.current);
@@ -1402,12 +1405,12 @@ const Index = () => {
         setKaraokeCombo(0);
       }
     }, KARAOKE_SCORE_TICK_MS);
-
+ 
     return () => {
       if (karaokeIntervalRef.current) window.clearInterval(karaokeIntervalRef.current);
       karaokeIntervalRef.current = null;
     };
-  }, [karaokeEnabled, pitchBlocks, isSingingActive]);
+  }, [karaokeEnabled, pitchBlocks, isSingingActive, karaokeScore]);
 
   useEffect(() => {
     if (!karaokeEnabled || !player.data?.durationSec) return;
