@@ -1392,6 +1392,7 @@ const Index = () => {
   }, [karaokeEnabled, player.data?.durationSec, stopKaraoke]);
 
   const fetchPitchData = useCallback(async () => {
+    if (!karaokeEnabled) return;
     if (!currentTrack.title) return;
     try {
       if (fetchPitchTimeoutRef.current) {
@@ -1411,6 +1412,9 @@ const Index = () => {
       });
       const data = await response.json();
 
+      // Guard check again in case mode changed during network request
+      if (!karaokeEnabled) return;
+
       if (Array.isArray(data)) {
         setPitchBlocks(data);
         console.log("Loaded snapped pitch blocks (raw array):", data.length);
@@ -1429,11 +1433,13 @@ const Index = () => {
     } catch (err) {
       console.error("Failed to load snapped pitch blocks:", err);
       setPitchBlocks([]);
-      fetchPitchTimeoutRef.current = window.setTimeout(() => {
-        void fetchPitchData();
-      }, 5000);
+      if (karaokeEnabled) {
+        fetchPitchTimeoutRef.current = window.setTimeout(() => {
+          void fetchPitchData();
+        }, 5000);
+      }
     }
-  }, [API_BASE_URL, activeGuildId, activeUserDiscordId, activeSessionToken, currentTrack.title, currentTrack.id]);
+  }, [API_BASE_URL, activeGuildId, activeUserDiscordId, activeSessionToken, currentTrack.title, currentTrack.id, karaokeEnabled]);
 
   const startLyricsAutoFetchLoop = useCallback(() => {
     if (lyricsRetryTimerRef.current) {
@@ -1476,10 +1482,14 @@ const Index = () => {
   }, [currentTrack.title, currentTrack.artist, activeGuildId]);
 
   useEffect(() => {
-    void fetchPitchData();
-    if (karaokeEnabled) {
-      startLyricsAutoFetchLoop();
+    if (!karaokeEnabled) {
+      setPitchBlocks([]);
+      return;
     }
+
+    void fetchPitchData();
+    startLyricsAutoFetchLoop();
+
     return () => {
       if (fetchPitchTimeoutRef.current) {
         window.clearTimeout(fetchPitchTimeoutRef.current);
