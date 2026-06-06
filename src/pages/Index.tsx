@@ -1799,6 +1799,16 @@ const Index = () => {
                 >
                   {summonBotMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Summon Bot"}
                 </Button>
+                {currentUser && (
+                  <div className="flex items-center gap-2 rounded-md border border-primary/40 bg-panel-soft/60 px-3 py-1">
+                    {currentUser.avatar ? (
+                      <img src={currentUser.avatar} alt="Avatar" className="h-6 w-6 rounded-full border border-primary object-cover" />
+                    ) : (
+                      <UserCircle2 className="h-6 w-6 text-primary" />
+                    )}
+                    <span className="text-xs font-semibold text-primary">{currentUser.name}</span>
+                  </div>
+                )}
                 <Button variant="outline" className="h-10 border-primary/55 text-primary hover:bg-accent/35" onClick={logoutDiscord}>
                   <LogOut className="h-4 w-4" />
                 </Button>
