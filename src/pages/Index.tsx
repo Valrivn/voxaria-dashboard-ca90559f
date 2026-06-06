@@ -1335,6 +1335,53 @@ const Index = () => {
     }
   };
 
+  const handleRefreshLyrics = async () => {
+    // Map internal states to structures expected by the requested worker function code
+    const playerState = { track: currentTrack };
+    const setLyrics = (val: any) => {
+      if (val === null) {
+        setLyricsData(null);
+        setLyricsUnavailable(true);
+      } else {
+        // Let's pass the parsed output through normalizeLyricsPayload to ensure it conforms to ApiLyrics
+        const normalized = normalizeLyricsPayload({
+          title: currentTrack.title,
+          artist: currentTrack.artist || "Unknown",
+          source: "Refreshed API",
+          plain: "",
+          synced: "",
+          hasSynced: true,
+          lines: val
+        });
+        setLyricsData(normalized);
+        setLyricsUnavailable(false);
+      }
+    };
+
+    if (!playerState?.track) return;
+    setLyrics(null); // Clear broken view state first
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/music/lyrics`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-user-id': 'owner' },
+            body: JSON.stringify({ 
+                title: playerState.track.title, 
+                artist: playerState.track.artist || 'Unknown',
+                forceResync: true // Forces server to skip cached file reads
+            })
+        });
+        const data = await response.json();
+        if (data && data.lines) {
+            setLyrics(data.lines);
+            toast({ title: "Lyrics refreshed", description: "Manual resync of lyrics succeeded." });
+        }
+    } catch (err) {
+        console.error("❌ Failed to force-sync text lines via manual handler: ", err);
+        toast({ title: "Refresh failed", description: "Failed to force-sync text lines.", variant: "destructive" });
+    }
+  };
+
   const detectedNoteLabel = useMemo(() => {
     if (!detectedPitchHz) return "--";
     const midi = Math.round(12 * Math.log2(detectedPitchHz / 440) + 69);
@@ -2408,6 +2455,12 @@ const Index = () => {
                           className="px-3 py-1.5 bg-emerald-500/20 border border-emerald-500/40 hover:bg-emerald-500/40 text-emerald-400 text-xs font-semibold rounded transition flex items-center gap-1.5"
                         >
                           🔄 Reload Arena Stream
+                        </button>
+                        <button 
+                          onClick={handleRefreshLyrics}
+                          className="px-3 py-1.5 bg-blue-500/20 border border-blue-500/40 hover:bg-blue-500/40 text-blue-400 text-xs font-semibold rounded transition flex items-center gap-1.5"
+                        >
+                          🎵 Refresh Lyrics
                         </button>
                         <div className="rounded-md border border-border/70 bg-panel-soft/80 px-2 py-1 text-xs text-primary">
                           Live Lyrics

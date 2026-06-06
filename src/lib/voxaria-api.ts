@@ -404,7 +404,20 @@ const normalizeLyricsPayload = (payload: unknown): ApiLyrics => {
   const lyrics = root.lyrics && typeof root.lyrics === "object" ? (root.lyrics as Record<string, unknown>) : root;
   const rawLines = Array.isArray(lyrics.lines) ? lyrics.lines : [];
   const lines = rawLines
-    .map((line) => {
+    .map((line, idx) => {
+      if (typeof line === "string") {
+        const regex = /\[(\d+):(\d+)(?:\.(\d+))?\](.*)/;
+        const match = line.match(regex);
+        if (match) {
+          const minutes = parseInt(match[1], 10);
+          const seconds = parseInt(match[2], 10);
+          const hundredths = match[3] ? parseInt(match[3], 10) : 0;
+          const text = match[4].trim();
+          const timeSeconds = minutes * 60 + seconds + (hundredths / 100);
+          return { timeSeconds, text };
+        }
+        return { timeSeconds: idx * 5, text: line.trim() };
+      }
       const item = line && typeof line === "object" ? (line as Record<string, unknown>) : {};
       const timeSeconds = toNumber(item.timeSeconds);
       const text = toStringValue(item.text);
