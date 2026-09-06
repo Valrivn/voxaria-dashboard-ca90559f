@@ -63,6 +63,7 @@ import {
   type ApiSearchResult,
   type ApiTrack,
 } from "@/lib/voxaria-api";
+import { normalizeLyricsPayload } from "@/lib/voxaria-api";
 
 type NavItem = { label: string; icon: typeof Disc3 };
 type LyricLine = { text: string; timeSeconds: number };
@@ -72,10 +73,41 @@ type SessionUser = {
   sessionToken?: string;
   name: string;
   roleLevel: number;
+  avatar?: string;
   permissions: {
     dj: boolean;
     staff: boolean;
   };
+};
+
+type ApiPlayer = {
+  id: string | null;
+  title: string | null;
+  artist: string | null;
+  cleanedTitle?: string | null;
+  cleanedArtist?: string | null;
+  url?: string | null;
+  uri?: string | null;
+  trackUrl?: string | null;
+  durationSec: number;
+  positionSec: number;
+  currentPositionMs?: number;
+  currentPositionSec?: number;
+  serverTimestampMs?: number | null;
+  startTime?: number | null;
+  lastPausedAt?: number | null;
+  isPaused?: boolean;
+  playing: boolean;
+  art?: string | null;
+  thumbnail?: string | null;
+  requesterName?: string | null;
+  requesterAvatar?: string | null;
+  volume: number;
+};
+
+type PlayerData = ApiPlayer & {
+  currentPositionSec: number;
+  currentPositionMs: number;
 };
 
 const LYRIC_OFFSET_DEFAULT_MS = 0;
@@ -344,7 +376,7 @@ const Index = () => {
   const status = useQuery({ queryKey: ["status"], queryFn: async () => voxariaApi.getStatus().catch(() => mockData.status), refetchInterval: 10000 });
   const cache = useQuery({ queryKey: ["cache"], queryFn: async () => voxariaApi.getCache().catch(() => mockData.cache), refetchInterval: 15000 });
   const settings = useQuery({ queryKey: ["settings"], queryFn: async () => voxariaApi.getSettings().catch(() => mockData.settings) });
-  const player = useQuery({
+  const player = useQuery<PlayerData | null>({
     queryKey: ["player"],
     queryFn: async () => {
       const startedAt = Date.now();
@@ -356,10 +388,29 @@ const Index = () => {
         const driftSec = Math.max(0, (Date.now() - serverTimestampMs) / 1000);
 
         return {
-          ...data,
+          id: data.id ?? null,
+          title: data.title,
+          artist: data.artist,
+          cleanedTitle: data.cleanedTitle,
+          cleanedArtist: data.cleanedArtist,
+          url: data.url,
+          uri: data.uri,
+          trackUrl: data.trackUrl,
+          durationSec: data.durationSec,
+          positionSec: data.positionSec,
+          currentPositionMs: data.currentPositionMs,
           currentPositionSec: data.currentPositionSec + latencyCompensationSec + driftSec,
-          currentPositionMs: (data.currentPositionSec + latencyCompensationSec + driftSec) * 1000,
-        };
+          serverTimestampMs: data.serverTimestampMs,
+          startTime: data.startTime,
+          lastPausedAt: data.lastPausedAt,
+          isPaused: data.isPaused,
+          playing: data.playing,
+          art: data.art,
+          thumbnail: data.thumbnail,
+          requesterName: data.requesterName,
+          requesterAvatar: data.requesterAvatar,
+          volume: data.volume,
+        } as PlayerData;
       } catch (error) {
         console.error("Player polling failed:", error);
         throw error;
@@ -610,7 +661,7 @@ const Index = () => {
 
   const currentTrack = useMemo(
     () => {
-      const rawId = (player.data?.id ?? player.data?.identifier ?? "").trim();
+      const rawId = (player.data?.id ?? "").trim();
       const cleanTitle = (player.data?.cleanedTitle ?? player.data?.title ?? "").trim();
       const cleanArtist = (player.data?.cleanedArtist ?? player.data?.artist ?? "").trim();
       
@@ -625,7 +676,7 @@ const Index = () => {
         id: finalId,
       };
     },
-    [player.data?.cleanedTitle, player.data?.title, player.data?.cleanedArtist, player.data?.artist, player.data?.trackUrl, player.data?.url, player.data?.uri, player.data?.id, player.data?.identifier],
+    [player.data?.cleanedTitle, player.data?.title, player.data?.cleanedArtist, player.data?.artist, player.data?.trackUrl, player.data?.url, player.data?.uri, player.data?.id],
   );
 
   const currentTrackKey = `${currentTrack.title}::${currentTrack.artist}`;
@@ -862,7 +913,7 @@ const Index = () => {
   const queueUnavailable = queue.isError;
   const lyricsServiceUnavailable = false;
   const isKaraokeActive = karaokeEnabled;
-  const canManageQueue = Boolean(currentUser?.permissions.dj || currentUser?.permissions.staff);
+  const canManageQueue = Boolean(currentUser?.permissions?.dj || currentUser?.permissions?.staff);
   const canViewStaffTab = (currentUser?.roleLevel ?? 0) >= 2;
   const manageableUsers = useMemo(
     () => sessionUsers.filter((user) => user.id !== currentUser?.id),
@@ -993,8 +1044,15 @@ const Index = () => {
   };
 
   const loginWithDiscord = () => {
-    // Redirect to backend OAuth2 passport mount
-    window.location.href = `${API_BASE_URL}/auth/discord`;
+    const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID;
+    const redirectUri = import.meta.env.VITE_DISCORD_REDIRECT_URI;
+    const scopes = import.meta.env.VITE_DISCORD_SCOPES || 'identify guilds';
+    if (!clientId || !redirectUri) {
+      toast({ title: "Config error", description: "Discord OAuth not configured", variant: "destructive" });
+      return;
+    }
+    const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scopes)}`;
+    window.location.href = discordAuthUrl;
   };
 
   const fetchSession = useCallback(async () => {
@@ -1012,13 +1070,18 @@ const Index = () => {
       }
       // Also handle the standard { user: {...} } format returned by the backend
       if (data && data.user) {
+        const roleLevel = data.user.role ?? 0;
         setCurrentUser({
           id: data.user.id,
           name: data.user.username ?? data.user.global_name ?? data.user.id,
           discordId: data.user.id,
           sessionToken: undefined,
           avatar: data.user.avatar,
-          role: data.user.role ?? 0,
+          roleLevel,
+          permissions: {
+            dj: roleLevel >= 1,
+            staff: roleLevel >= 2,
+          },
         });
         return true;
       }
@@ -1034,6 +1097,36 @@ const Index = () => {
     const urlParams = new URLSearchParams(window.location.search);
     const hasLoginSuccess = urlParams.get('login_status') === 'success';
     const userParam = urlParams.get('user');
+    const code = urlParams.get('code');
+
+    const handleOAuthCallback = async () => {
+      if (!code) return;
+      const redirectUri = import.meta.env.VITE_DISCORD_REDIRECT_URI;
+      try {
+        const res = await fetch(`${API_BASE_URL}/auth/discord`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true'
+          },
+          credentials: 'include',
+          body: JSON.stringify({ code, redirectUri })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user) {
+            setCurrentUser(data.user);
+            localStorage.setItem('vx_user_fallback', JSON.stringify(data.user));
+          }
+        } else {
+          console.error('OAuth token exchange failed:', await res.text());
+        }
+      } catch (err) {
+        console.error('OAuth callback error:', err);
+      } finally {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    };
 
     if (hasLoginSuccess) {
       if (userParam) {
@@ -1047,10 +1140,10 @@ const Index = () => {
           console.error("Failed to parse fallback user from URL:", e);
         }
       }
-      // Clean up the URL bar cleanly so the parameter disappears from view
       window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (code) {
+      handleOAuthCallback();
     } else {
-      // Check if we have a cached fallback user in localStorage
       const cachedUser = localStorage.getItem('vx_user_fallback');
       if (cachedUser) {
         try {
@@ -1065,7 +1158,7 @@ const Index = () => {
     }
 
     void fetchSession().then((success) => {
-      if (hasLoginSuccess && success) {
+      if ((hasLoginSuccess || code) && success) {
         toast({
           title: "Welcome back!",
           description: "Successfully authenticated with Discord.",
@@ -1076,7 +1169,7 @@ const Index = () => {
 
   const logoutDiscord = async () => {
     try {
-      await fetch(`${API_BASE_URL}/auth/logout`, {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",
         headers: { "ngrok-skip-browser-warning": "true" },
         credentials: "include"
@@ -2648,7 +2741,7 @@ const Index = () => {
                         <div className="flex items-center justify-between rounded-md border border-border/70 px-2 py-1.5">
                           <span className="text-xs text-muted-foreground">DJ</span>
                           <Switch
-                            checked={user.permissions.dj}
+                            checked={user.permissions?.dj}
                             onCheckedChange={() => toggleUserPermission(user.id, "dj")}
                           />
                         </div>
