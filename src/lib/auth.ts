@@ -21,11 +21,34 @@ export type RefreshResponse = {
   expires_in: number;
 };
 
-let accessToken: string | null = null;
-let accessTokenExpiry: number = 0;
-let currentUser: AuthUser | null = null;
-let refreshPromise: Promise<RefreshResponse> | null = null;
-let authListeners: Set<(user: AuthUser | null) => void> = new Set();
+let refreshTokenStore: string | null = null;
+
+const REFRESH_TOKEN_KEY = 'vx_refresh_token';
+
+function loadRefreshToken(): string | null {
+  if (refreshTokenStore) return refreshTokenStore;
+  try {
+    const stored = localStorage.getItem(REFRESH_TOKEN_KEY);
+    if (stored) {
+      refreshTokenStore = stored;
+      return stored;
+    }
+  } catch {}
+  return null;
+}
+
+function saveRefreshToken(token: string | null) {
+  refreshTokenStore = token;
+  try {
+    if (token) localStorage.setItem(REFRESH_TOKEN_KEY, token);
+    else localStorage.removeItem(REFRESH_TOKEN_KEY);
+  } catch {}
+}
+
+function clearRefreshToken() {
+  refreshTokenStore = null;
+  try { localStorage.removeItem(REFRESH_TOKEN_KEY); } catch {}
+}
 
 const BASE_URL = import.meta.env.VITE_VOXARIA_API_BASE_URL?.trim() || import.meta.env.VITE_API_URL?.trim() || 'http://localhost:3002';
 
@@ -66,22 +89,33 @@ async function refreshAccessToken(): Promise<RefreshResponse> {
     return refreshPromise;
   }
 
+  const storedRefreshToken = loadRefreshToken();
+  if (!storedRefreshToken) {
+    throw new Error('No refresh token available');
+  }
+
   refreshPromise = (async () => {
     const response = await fetch(`${BASE_URL}/api/auth/refresh`, {
       method: 'POST',
-      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         'ngrok-skip-browser-warning': 'true'
-      }
+      },
+      body: JSON.stringify({ refresh_token: storedRefreshToken })
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        clearRefreshToken();
+      }
       throw new Error(error.error || 'Failed to refresh token');
     }
 
     const data = await response.json();
+    if (data.refresh_token) {
+      saveRefreshToken(data.refresh_token);
+    }
     return data;
   })();
 
@@ -165,11 +199,15 @@ export async function loginWithDiscord(code: string, redirectUri: string): Promi
     throw new Error(error.error || 'Discord login failed');
   }
 
-  const data: TokenResponse = await response.json();
+  const data: TokenResponse & { refresh_token?: string } = await response.json();
   
   accessToken = data.access_token;
   accessTokenExpiry = Date.now() + data.expires_in * 1000;
   currentUser = data.user || null;
+  
+  if (data.refresh_token) {
+    saveRefreshToken(data.refresh_token);
+  }
   
   notifyListeners();
   
@@ -178,13 +216,14 @@ export async function loginWithDiscord(code: string, redirectUri: string): Promi
 
 export async function logout(): Promise<void> {
   try {
+    const storedRefreshToken = loadRefreshToken();
     await fetch(`${BASE_URL}/api/auth/logout`, {
       method: 'POST',
-      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         'ngrok-skip-browser-warning': 'true'
-      }
+      },
+      body: storedRefreshToken ? JSON.stringify({ refresh_token: storedRefreshToken }) : undefined
     });
   } catch (error) {
     console.error('Logout error:', error);
@@ -192,6 +231,7 @@ export async function logout(): Promise<void> {
     accessToken = null;
     accessTokenExpiry = 0;
     currentUser = null;
+    clearRefreshToken();
     notifyListeners();
   }
 }
