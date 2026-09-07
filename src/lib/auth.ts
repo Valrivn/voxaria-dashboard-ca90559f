@@ -22,6 +22,11 @@ export type RefreshResponse = {
 };
 
 let refreshTokenStore: string | null = null;
+let accessToken: string | null = null;
+let accessTokenExpiry: number = 0;
+let currentUser: AuthUser | null = null;
+let refreshPromise: Promise<RefreshResponse> | null = null;
+let authListeners: Set<(user: AuthUser | null) => void> = new Set();
 
 const REFRESH_TOKEN_KEY = 'vx_refresh_token';
 
@@ -57,6 +62,7 @@ function notifyListeners() {
 }
 
 export function subscribeToAuth(listener: (user: AuthUser | null) => void) {
+  console.log('[AUDIT] auth:', { action: 'subscribeToAuth', userId: currentUser?.id });
   authListeners.add(listener);
   listener(currentUser);
   return () => {
@@ -65,6 +71,7 @@ export function subscribeToAuth(listener: (user: AuthUser | null) => void) {
 }
 
 export function getAccessToken(): string | null {
+  console.log('[AUDIT] auth:', { action: 'getAccessToken', userId: currentUser?.id });
   if (accessToken && Date.now() < accessTokenExpiry) {
     return accessToken;
   }
@@ -72,14 +79,17 @@ export function getAccessToken(): string | null {
 }
 
 export function getCurrentUser(): AuthUser | null {
+  console.log('[AUDIT] auth:', { action: 'getCurrentUser', userId: currentUser?.id });
   return currentUser;
 }
 
 export function isAuthenticated(): boolean {
+  console.log('[AUDIT] auth:', { action: 'isAuthenticated', userId: currentUser?.id });
   return !!getAccessToken() && !!currentUser;
 }
 
 export function getAuthHeaders(): Record<string, string> {
+  console.log('[AUDIT] auth:', { action: 'getAuthHeaders', userId: currentUser?.id });
   const token = getAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
@@ -131,6 +141,7 @@ export async function fetchWithAuth<T>(
   path: string,
   init?: RequestInit
 ): Promise<T> {
+  console.log('[AUDIT] auth:', { action: 'fetchWithAuth', userId: currentUser?.id });
   const makeRequest = async (token: string): Promise<Response> => {
     const headers = new Headers(init?.headers);
     headers.set('Authorization', `Bearer ${token}`);
@@ -139,7 +150,6 @@ export async function fetchWithAuth<T>(
 
     return fetch(`${BASE_URL}${path}`, {
       ...init,
-      credentials: 'include',
       headers
     });
   };
@@ -184,9 +194,9 @@ export async function fetchWithAuth<T>(
 }
 
 export async function loginWithDiscord(code: string, redirectUri: string): Promise<AuthUser> {
+  console.log('[AUDIT] auth:', { action: 'loginWithDiscord', userId: currentUser?.id });
   const response = await fetch(`${BASE_URL}/auth/discord`, {
     method: 'POST',
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       'ngrok-skip-browser-warning': 'true'
@@ -215,6 +225,7 @@ export async function loginWithDiscord(code: string, redirectUri: string): Promi
 }
 
 export async function logout(): Promise<void> {
+  console.log('[AUDIT] auth:', { action: 'logout', userId: currentUser?.id });
   try {
     const storedRefreshToken = loadRefreshToken();
     await fetch(`${BASE_URL}/api/auth/logout`, {
@@ -237,12 +248,12 @@ export async function logout(): Promise<void> {
 }
 
 export async function validateSession(): Promise<AuthUser | null> {
+  console.log('[AUDIT] auth:', { action: 'validateSession', userId: currentUser?.id });
   const token = getAccessToken();
   if (!token) return null;
 
   try {
     const response = await fetch(`${BASE_URL}/auth/session`, {
-      credentials: 'include',
       headers: {
         'Authorization': `Bearer ${token}`,
         'ngrok-skip-browser-warning': 'true'
@@ -273,6 +284,7 @@ export async function validateSession(): Promise<AuthUser | null> {
 }
 
 export function clearAuth() {
+  console.log('[AUDIT] auth:', { action: 'clearAuth', userId: currentUser?.id });
   accessToken = null;
   accessTokenExpiry = 0;
   currentUser = null;

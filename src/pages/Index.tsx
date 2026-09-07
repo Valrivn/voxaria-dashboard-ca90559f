@@ -1,5 +1,50 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Component, ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[ErrorBoundary] Caught error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex h-screen items-center justify-center bg-background">
+          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-center">
+            <h2 className="text-lg font-semibold text-destructive">Something went wrong</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {this.state.error instanceof ReferenceError 
+                ? 'Authentication module failed to load. Please refresh the page.'
+                : 'An unexpected error occurred. Please refresh the page.'}
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 rounded bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
+            >
+              Refresh Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 import {
   Circle,
   ChevronDown,
@@ -79,6 +124,102 @@ type SessionUser = {
     staff: boolean;
   };
 };
+
+const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.host}`;
+
+interface UseKaraokeWSOptions {
+  guildId: string;
+  token: string | undefined;
+  onMessage?: (event: string, data: unknown) => void;
+  onOpen?: () => void;
+  onClose?: () => void;
+}
+
+function useKaraokeWS({ guildId, token, onMessage, onOpen, onClose }: UseKaraokeWSOptions) {
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const maxReconnectAttempts = 10;
+  const baseReconnectDelay = 1000;
+
+  const connect = useCallback(() => {
+    if (!guildId || !token) return;
+
+    const wsUrl = `${WS_URL}/ws/karaoke?guildId=${encodeURIComponent(guildId)}&token=${encodeURIComponent(token)}`;
+    
+    try {
+      wsRef.current = new WebSocket(wsUrl);
+    } catch (err) {
+      console.error('[WS] Failed to create WebSocket:', err);
+      scheduleReconnect();
+      return;
+    }
+
+    wsRef.current.onopen = () => {
+      console.log('[WS] Connected to karaoke:', guildId);
+      reconnectAttemptsRef.current = 0;
+      onOpen?.();
+    };
+
+    wsRef.current.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(event.data);
+        onMessage?.(parsed.event, parsed.data);
+      } catch (err) {
+        console.error('[WS] Failed to parse message:', err);
+      }
+    };
+
+    wsRef.current.onclose = () => {
+      console.log('[WS] Disconnected from karaoke:', guildId);
+      onClose?.();
+      scheduleReconnect();
+    };
+
+    wsRef.current.onerror = (err) => {
+      console.error('[WS] Error:', err);
+    };
+  }, [guildId, token, onMessage, onOpen, onClose]);
+
+  const scheduleReconnect = useCallback(() => {
+    if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+      console.log('[WS] Max reconnect attempts reached');
+      return;
+    }
+
+    const delay = baseReconnectDelay * Math.pow(2, reconnectAttemptsRef.current) + Math.random() * 1000;
+    reconnectAttemptsRef.current++;
+
+    if (reconnectTimeoutRef.current) {
+      window.clearTimeout(reconnectTimeoutRef.current);
+    }
+
+    reconnectTimeoutRef.current = window.setTimeout(() => {
+      connect();
+    }, delay);
+  }, [connect, maxReconnectAttempts, baseReconnectDelay]);
+
+  useEffect(() => {
+    connect();
+
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, [connect]);
+
+  const send = useCallback((event: string, data: unknown) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ event, data }));
+    }
+  }, []);
+
+  return { send };
+}
 
 type ApiPlayer = {
   id: string | null;
@@ -367,6 +508,20 @@ const Index = () => {
   const backendClockRef = useRef({ positionMs: 0, receivedAt: 0, paused: true, durationMs: 0 });
   const lastClockEmitRef = useRef(0);
   const frameCountRef = useRef(0);
+
+  const karaokeWS = useKaraokeWS({
+    guildId: activeGuildId,
+    token: activeSessionToken,
+    onMessage: (event, data) => {
+      console.log('[WS] Received:', event, data);
+    },
+    onOpen: () => {
+      console.log('[WS] Karaoke WebSocket connected');
+    },
+    onClose: () => {
+      console.log('[WS] Karaoke WebSocket disconnected');
+    },
+  });
 
   const [sessionUsers, setSessionUsers] = useState<SessionUser[]>([]);
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
@@ -1258,7 +1413,8 @@ const Index = () => {
       micFloatBufferRef.current = new Float32Array(new ArrayBuffer(analyser.fftSize * Float32Array.BYTES_PER_ELEMENT));
       targetNoteMidiRef.current = null;
 
-      setKaraokeEnabled(true);
+setKaraokeEnabled(true);
+      karaokeWS.send('karaoke_start', { trackId: currentTrack.id, trackUrl: currentTrack.url });
       void fetchPitchData();
       void refreshLyrics();
       setKaraokeScore(0);
@@ -1271,7 +1427,7 @@ const Index = () => {
       karaokeMaxComboRef.current = 0;
       karaokeStartTimeRef.current = Date.now();
       setScoreSummaryOpen(false);
- 
+  
       if (isProcessing) {
         toast({
           title: "Karaoke processing…",
@@ -1290,6 +1446,7 @@ const Index = () => {
 
 
   const stopKaraoke = useCallback(() => {
+    karaokeWS.send('karaoke_stop', { trackId: currentTrack.id });
     if (karaokeAnimationRef.current) cancelAnimationFrame(karaokeAnimationRef.current);
     if (karaokeIntervalRef.current) window.clearInterval(karaokeIntervalRef.current);
     if (lyricsRetryTimerRef.current) {
@@ -1318,7 +1475,7 @@ const Index = () => {
     setMicVolumePercent(0);
     setIsSingingActive(false);
     setKaraokeEnabled(false);
-  }, []);
+  }, [karaokeWS, currentTrack.id]);
 
   const handleHotReload = async () => {
     console.log("🔄 [HOT RELOAD] Initiating forced arena session sync...");
@@ -2286,7 +2443,8 @@ const Index = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <ErrorBoundary>
+      <div className="min-h-screen bg-background text-foreground">
       <div className="relative min-h-screen lg:pl-[240px]">
         <aside className="fixed left-0 top-0 z-20 hidden h-screen w-[240px] flex-col border-r border-border/70 bg-panel/90 p-4 backdrop-blur-xl lg:flex">
           <div className="mb-8 rounded-md border border-primary/40 bg-panel-soft/85 p-3 shadow-soft neon-glow">
@@ -3073,6 +3231,7 @@ const Index = () => {
         </div>
       )}
     </div>
+    </ErrorBoundary>
   );
 };
 
