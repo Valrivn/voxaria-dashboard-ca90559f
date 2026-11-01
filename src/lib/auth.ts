@@ -21,39 +21,11 @@ export type RefreshResponse = {
   expires_in: number;
 };
 
-let refreshTokenStore: string | null = null;
-let accessToken: string | null = null;
+export let accessToken: string | null = null;
 let accessTokenExpiry: number = 0;
 let currentUser: AuthUser | null = null;
 let refreshPromise: Promise<RefreshResponse> | null = null;
 let authListeners: Set<(user: AuthUser | null) => void> = new Set();
-
-const REFRESH_TOKEN_KEY = 'vx_refresh_token';
-
-function loadRefreshToken(): string | null {
-  if (refreshTokenStore) return refreshTokenStore;
-  try {
-    const stored = localStorage.getItem(REFRESH_TOKEN_KEY);
-    if (stored) {
-      refreshTokenStore = stored;
-      return stored;
-    }
-  } catch {}
-  return null;
-}
-
-function saveRefreshToken(token: string | null) {
-  refreshTokenStore = token;
-  try {
-    if (token) localStorage.setItem(REFRESH_TOKEN_KEY, token);
-    else localStorage.removeItem(REFRESH_TOKEN_KEY);
-  } catch {}
-}
-
-function clearRefreshToken() {
-  refreshTokenStore = null;
-  try { localStorage.removeItem(REFRESH_TOKEN_KEY); } catch {}
-}
 
 const BASE_URL = import.meta.env.VITE_VOXARIA_API_BASE_URL?.trim() || import.meta.env.VITE_API_URL?.trim() || 'http://localhost:3002';
 
@@ -62,7 +34,6 @@ function notifyListeners() {
 }
 
 export function subscribeToAuth(listener: (user: AuthUser | null) => void) {
-  console.log('[AUDIT] auth:', { action: 'subscribeToAuth', userId: currentUser?.id });
   authListeners.add(listener);
   listener(currentUser);
   return () => {
@@ -71,25 +42,43 @@ export function subscribeToAuth(listener: (user: AuthUser | null) => void) {
 }
 
 export function getAccessToken(): string | null {
-  console.log('[AUDIT] auth:', { action: 'getAccessToken', userId: currentUser?.id });
-  if (accessToken && Date.now() < accessTokenExpiry) {
+  if (accessToken && (accessTokenExpiry === 0 || Date.now() < accessTokenExpiry)) {
     return accessToken;
   }
-  return null;
+  if (typeof localStorage !== 'undefined') {
+    const stored = localStorage.getItem('accessToken') || localStorage.getItem('access_token') || localStorage.getItem('token') || localStorage.getItem('sessionToken');
+    if (stored) {
+      accessToken = stored;
+      return stored;
+    }
+  }
+  return accessToken;
+}
+
+export function setAccessToken(token: string | null, expiresIn: number = 3600) {
+  accessToken = token;
+  if (token) {
+    accessTokenExpiry = Date.now() + expiresIn * 1000;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('accessToken', token);
+    }
+  } else {
+    accessTokenExpiry = 0;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('accessToken');
+    }
+  }
 }
 
 export function getCurrentUser(): AuthUser | null {
-  console.log('[AUDIT] auth:', { action: 'getCurrentUser', userId: currentUser?.id });
   return currentUser;
 }
 
 export function isAuthenticated(): boolean {
-  console.log('[AUDIT] auth:', { action: 'isAuthenticated', userId: currentUser?.id });
   return !!getAccessToken() && !!currentUser;
 }
 
 export function getAuthHeaders(): Record<string, string> {
-  console.log('[AUDIT] auth:', { action: 'getAuthHeaders', userId: currentUser?.id });
   const token = getAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
@@ -99,33 +88,22 @@ async function refreshAccessToken(): Promise<RefreshResponse> {
     return refreshPromise;
   }
 
-  const storedRefreshToken = loadRefreshToken();
-  if (!storedRefreshToken) {
-    throw new Error('No refresh token available');
-  }
-
   refreshPromise = (async () => {
     const response = await fetch(`${BASE_URL}/api/auth/refresh`, {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         'ngrok-skip-browser-warning': 'true'
-      },
-      body: JSON.stringify({ refresh_token: storedRefreshToken })
+      }
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      if (response.status === 401) {
-        clearRefreshToken();
-      }
       throw new Error(error.error || 'Failed to refresh token');
     }
 
     const data = await response.json();
-    if (data.refresh_token) {
-      saveRefreshToken(data.refresh_token);
-    }
     return data;
   })();
 
@@ -141,15 +119,19 @@ export async function fetchWithAuth<T>(
   path: string,
   init?: RequestInit
 ): Promise<T> {
-  console.log('[AUDIT] auth:', { action: 'fetchWithAuth', userId: currentUser?.id });
-  const makeRequest = async (token: string): Promise<Response> => {
+  const makeRequest = async (token?: string | null): Promise<Response> => {
     const headers = new Headers(init?.headers);
-    headers.set('Authorization', `Bearer ${token}`);
-    headers.set('Content-Type', 'application/json');
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+    if (!headers.has('Content-Type') && !(init?.body instanceof FormData)) {
+      headers.set('Content-Type', 'application/json');
+    }
     headers.set('ngrok-skip-browser-warning', 'true');
 
     return fetch(`${BASE_URL}${path}`, {
       ...init,
+      credentials: 'include',
       headers
     });
   };
@@ -157,15 +139,20 @@ export async function fetchWithAuth<T>(
   let token = getAccessToken();
   
   if (!token) {
-    const refreshed = await refreshAccessToken();
-    token = refreshed.access_token;
-    accessToken = token;
-    accessTokenExpiry = Date.now() + refreshed.expires_in * 1000;
+    try {
+      const refreshed = await refreshAccessToken();
+      token = refreshed.access_token;
+      accessToken = token;
+      accessTokenExpiry = Date.now() + refreshed.expires_in * 1000;
+    } catch {
+      // Unauthenticated visitor / guest mode: proceed without Bearer token
+      token = null;
+    }
   }
 
   let response = await makeRequest(token);
 
-  if (response.status === 401) {
+  if (response.status === 401 && token) {
     const errorData = await response.json().catch(() => ({}));
     
     if (errorData.code === 'TOKEN_EXPIRED' || errorData.error?.includes('expired')) {
@@ -194,9 +181,9 @@ export async function fetchWithAuth<T>(
 }
 
 export async function loginWithDiscord(code: string, redirectUri: string): Promise<AuthUser> {
-  console.log('[AUDIT] auth:', { action: 'loginWithDiscord', userId: currentUser?.id });
   const response = await fetch(`${BASE_URL}/auth/discord`, {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       'ngrok-skip-browser-warning': 'true'
@@ -209,15 +196,11 @@ export async function loginWithDiscord(code: string, redirectUri: string): Promi
     throw new Error(error.error || 'Discord login failed');
   }
 
-  const data: TokenResponse & { refresh_token?: string } = await response.json();
+  const data: TokenResponse = await response.json();
   
   accessToken = data.access_token;
   accessTokenExpiry = Date.now() + data.expires_in * 1000;
   currentUser = data.user || null;
-  
-  if (data.refresh_token) {
-    saveRefreshToken(data.refresh_token);
-  }
   
   notifyListeners();
   
@@ -225,16 +208,14 @@ export async function loginWithDiscord(code: string, redirectUri: string): Promi
 }
 
 export async function logout(): Promise<void> {
-  console.log('[AUDIT] auth:', { action: 'logout', userId: currentUser?.id });
   try {
-    const storedRefreshToken = loadRefreshToken();
     await fetch(`${BASE_URL}/api/auth/logout`, {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         'ngrok-skip-browser-warning': 'true'
-      },
-      body: storedRefreshToken ? JSON.stringify({ refresh_token: storedRefreshToken }) : undefined
+      }
     });
   } catch (error) {
     console.error('Logout error:', error);
@@ -242,18 +223,17 @@ export async function logout(): Promise<void> {
     accessToken = null;
     accessTokenExpiry = 0;
     currentUser = null;
-    clearRefreshToken();
     notifyListeners();
   }
 }
 
 export async function validateSession(): Promise<AuthUser | null> {
-  console.log('[AUDIT] auth:', { action: 'validateSession', userId: currentUser?.id });
   const token = getAccessToken();
   if (!token) return null;
 
   try {
     const response = await fetch(`${BASE_URL}/auth/session`, {
+      credentials: 'include',
       headers: {
         'Authorization': `Bearer ${token}`,
         'ngrok-skip-browser-warning': 'true'
@@ -284,7 +264,6 @@ export async function validateSession(): Promise<AuthUser | null> {
 }
 
 export function clearAuth() {
-  console.log('[AUDIT] auth:', { action: 'clearAuth', userId: currentUser?.id });
   accessToken = null;
   accessTokenExpiry = 0;
   currentUser = null;
